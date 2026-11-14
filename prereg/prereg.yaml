@@ -1,0 +1,64 @@
+# Pre-registration for copy-the-insiders.
+# Every rule the pipeline uses is read from this file. Do not hard-code rules elsewhere.
+# The SHA-256 of this file (line endings normalized to \n) is recorded in git tag prereg-v1.
+version: 1
+
+periods:
+  dev:     {start: 2014-01-01, end: 2021-12-31}
+  test:    {start: 2022-01-01, end: 2026-06-30}
+  forward: {start: 2026-07-01}
+
+universe:
+  min_price: 5
+  min_mcap_usd: 300_000_000
+  us_listed_common: true
+
+groups:
+  insider:
+    codes: [P]
+    roles: [officer, director]
+    exclude_10b5_1: true
+    min_value_usd: 10_000
+    entry: next_open_after_filed_date
+  congress:
+    asset_types: [common_stock]
+    entry: next_open_after_filed_date
+
+portfolio:
+  weighting: equal
+  rebalance: on_entry_or_exit     # rebalance to equal weight on any day a position opens or closes
+  hold_trading_days: 126
+  early_exit_on_filer_sale: true
+  one_position_per_ticker: true   # a repeat buy signal on a held ticker does NOT reset the hold clock
+  cash_return: TBILL
+  starting_nav: 1.0
+
+delisting:
+  acquired: deal_price
+  other: last_price
+  no_price: -1.0
+
+costs:
+  base_bps_per_side: 10
+  stress_bps_per_side: 25
+
+benchmarks:
+  primary: SPY_TR
+  secondary: sector_clone_monthly
+
+inference:
+  ci: block_bootstrap
+  block_months: 6
+  reps: 10000
+  alpha: 0.05
+  multiple_testing: holm
+  seed: 20260101
+
+decision_rule:
+  beats: "adj_ci_low > 0"
+  rules_out: "adj_ci_high < 0.02"
+
+sensitivity:
+  congress_sizing: [low, mid, high]
+  costs: [base, stress]
+  hold_trading_days: [63, 126]
