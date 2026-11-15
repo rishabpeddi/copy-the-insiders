@@ -98,8 +98,12 @@ def resolve(candidates: pd.DataFrame, sec_map: pd.DataFrame, prices: pd.DataFram
     # Price on entry day, and nominal close on (or just before) the trade date.
     px = prices[["ticker", "date", "close_nominal"]].copy()
     px["date"] = pd.to_datetime(px["date"])
-    on_entry = set(zip(px["ticker"], px["date"], strict=True))
-    r["has_entry_price"] = [(t, d) in on_entry for t, d in zip(r["ticker"], r["entry_date"], strict=True)]
+    keys = px[["ticker", "date"]].drop_duplicates().rename(columns={"date": "entry_date"})
+    keys["has_entry_price"] = True
+    r["entry_date"] = r["entry_date"].astype("datetime64[ns]")
+    keys["entry_date"] = keys["entry_date"].astype("datetime64[ns]")
+    r = r.merge(keys, on=["ticker", "entry_date"], how="left")
+    r["has_entry_price"] = r["has_entry_price"].eq(True)
 
     r = r.sort_values("trade_date").reset_index(drop=True)
     r["trade_date"] = r["trade_date"].astype("datetime64[ns]")

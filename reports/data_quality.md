@@ -1,6 +1,6 @@
 # Data quality (generated)
 
-Generated 2026-11-15 15:29 by `cti resolve`. Price source: **yfinance**
+Generated 2026-11-15 15:54 by `cti resolve`. Price source: **yfinance**
 (survivors only: see "Survivorship" below). Calendar: 3,258 trading days, 2013-12-02 to 2026-11-13.
 
 ## Insider purchase candidates -> securities
