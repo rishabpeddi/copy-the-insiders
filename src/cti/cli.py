@@ -17,17 +17,16 @@ app.add_typer(prereg_app, name="prereg")
 
 
 @ingest_app.command("form4")
-def ingest_form4(start: str = "2014Q1", end: str = "2026Q2") -> None:
+def ingest_form4(start: str = "2014Q1", end: str = "2026Q3") -> None:
     """SEC insider transaction datasets -> data/raw/form4 -> data/staging/form4."""
     from cti.ingest.sec_form4 import ingest
 
-    for q, counts in ingest(start, end).items():
-        typer.echo(f"{q}: " + ", ".join(f"{k}={v:,}" for k, v in counts.items()))
+    ingest(start, end, log=lambda m: typer.echo(m))
 
 
 @ingest_app.command("reference")
 def ingest_reference() -> None:
-    """T-bills (FRED), SEC CIK->ticker map, SPY + 11 sector ETF prices."""
+    """T-bills (US Treasury), SEC CIK->ticker map, SPY + 11 sector ETF prices."""
     from cti.pipeline import ingest_reference as run
 
     out = run(load_config())
@@ -41,7 +40,8 @@ def ingest_prices(refetch: bool = typer.Option(False, help="Re-pull tickers alre
     """Prices for every ticker the insider candidates could map to. Run `cti build` first."""
     from cti.pipeline import ingest_prices as run
 
-    typer.echo(f"fetched {run(load_config(), only_missing=not refetch)['requested']} tickers")
+    n = run(load_config(), only_missing=not refetch, log=lambda m: typer.echo(m))["requested"]
+    typer.echo(f"fetched {n} tickers")
 
 
 @app.command()
@@ -96,7 +96,7 @@ def run_cmd(period: str = typer.Option("dev", help="dev | test"),
 
 
 @app.command("all")
-def all_cmd(start: str = "2014Q1", end: str = "2026Q2", skip_ingest: bool = False) -> None:
+def all_cmd(start: str = "2014Q1", end: str = "2026Q3", skip_ingest: bool = False) -> None:
     """Ingest, build, test. Same as `make all`."""
     if not skip_ingest:
         ingest_form4(start, end)

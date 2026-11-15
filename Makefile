@@ -2,7 +2,7 @@
 .PHONY: all install ingest build test lint clean
 
 START ?= 2014Q1
-END   ?= 2026Q2
+END   ?= 2026Q3
 
 all: install ingest build test
 

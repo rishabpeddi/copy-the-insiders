@@ -158,6 +158,18 @@ def stage(zip_path: Path, data_dir: Path = DATA_DIR) -> dict[str, int]:
     return counts
 
 
-def ingest(start: str, end: str, data_dir: Path = DATA_DIR) -> dict[str, dict[str, int]]:
+def ingest(start: str, end: str, data_dir: Path = DATA_DIR, log=print) -> dict[str, dict[str, int]]:
+    """Download + stage each quarter. Quarters SEC hasn't published yet (404) are skipped."""
     session = requests.Session()
-    return {q: stage(download(q, session, data_dir), data_dir) for q in quarters(start, end)}
+    out = {}
+    for q in quarters(start, end):
+        try:
+            z = download(q, session, data_dir)
+        except requests.HTTPError as e:
+            if e.response is not None and e.response.status_code == 404:
+                log(f"{q}: not published yet, skipped")
+                continue
+            raise
+        out[q] = stage(z, data_dir)
+        log(f"{q}: " + ", ".join(f"{k}={v:,}" for k, v in out[q].items()))
+    return out

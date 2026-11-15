@@ -52,11 +52,15 @@ def ingest_reference(cfg: Config, data_dir: Path = DATA_DIR) -> dict:
 def tickers_to_fetch(candidates: pd.DataFrame, sec_map: pd.DataFrame) -> list[str]:
     filing = {t for t in candidates["issuer_ticker"].map(normalize_ticker) if t}
     ciks = set(candidates["issuer_cik"])
-    current = {t.replace(".", "-") for t in sec_map.loc[sec_map["cik"].isin(ciks), "ticker"]}
-    return sorted(filing | current)
+    # Only the SEC tickers choose_tickers can use: the CIK's primary ticker, plus any that also
+    # appear in filings. Skips warrants/preferreds (DAVEW, NEE-PU) that would never be chosen.
+    m = sec_map[sec_map["cik"].isin(ciks)].assign(t=lambda d: d["ticker"].str.replace(".", "-"))
+    primary = set(m.groupby("cik")["t"].first())
+    return sorted(filing | primary | (set(m["t"]) & filing))
 
 
-def ingest_prices(cfg: Config, data_dir: Path = DATA_DIR, only_missing: bool = True) -> dict:
+def ingest_prices(cfg: Config, data_dir: Path = DATA_DIR, only_missing: bool = True,
+                  chunk: int = 400, log=print) -> dict:
     cands = load_candidates(data_dir)
     want = tickers_to_fetch(cands, ref.load_sec_tickers(data_dir))
     staged_path = data_dir / "staging" / "prices" / f"{cfg['data']['price_source']}.parquet"
@@ -65,9 +69,13 @@ def ingest_prices(cfg: Config, data_dir: Path = DATA_DIR, only_missing: bool = T
         have = set(pd.read_parquet(staged_path, columns=["ticker"])["ticker"])
         tried = set(nf_path.read_text().split()) if nf_path.exists() else set()
         want = [t for t in want if t not in have and t not in tried]
-    if want:
-        px_mod.fetch_and_stage(want, str(cfg["data"]["price_history_start"]), _end_date(),
-                               price_source(cfg), data_dir)
+    # Each chunk is saved as its own raw pull, so an interrupted run resumes where it stopped.
+    src = price_source(cfg)
+    for i in range(0, len(want), chunk):
+        part = want[i:i + chunk]
+        staged = px_mod.fetch_and_stage(part, str(cfg["data"]["price_history_start"]), _end_date(), src, data_dir)
+        log(f"prices: {min(i + chunk, len(want)):,}/{len(want):,} requested; "
+            f"{staged['ticker'].nunique():,} tickers staged")
     return {"requested": len(want)}
 
 
