@@ -25,7 +25,10 @@ import requests
 
 from cti.config import DATA_DIR
 
-URL = "https://www.sec.gov/files/structureddata/data/insider-transactions-data-sets/{q}_form345.zip"
+URLS = [
+    "https://www.sec.gov/files/structureddata/data/insider-transactions-data-sets/{q}_form345.zip",
+    "https://www.sec.gov/files/datastandardsinnovation/data/insider-transactions-data-sets/{q}_form345.zip",
+]
 TABLES = ["SUBMISSION", "REPORTINGOWNER", "NONDERIV_TRANS", "FOOTNOTES"]
 DATE_COLUMNS = {
     "SUBMISSION": ["FILING_DATE", "PERIOD_OF_REPORT", "DATE_OF_ORIG_SUB"],
@@ -97,7 +100,10 @@ def download(q: str, session: requests.Session | None = None, data_dir: Path = D
         return path
 
     s = session or requests.Session()
-    resp = s.get(URL.format(q=q), headers={"User-Agent": _user_agent()}, timeout=180)
+    for url in (u.format(q=q) for u in URLS):  # SEC moved newer quarters to a new folder in 2026
+        resp = s.get(url, headers={"User-Agent": _user_agent()}, timeout=180)
+        if resp.status_code != 404:
+            break
     resp.raise_for_status()
     bad = zipfile.ZipFile(io.BytesIO(resp.content)).testzip()  # fail fast on a corrupt download
     if bad:
@@ -108,7 +114,7 @@ def download(q: str, session: requests.Session | None = None, data_dir: Path = D
     manifest[path.name] = {
         "sha256": hashlib.sha256(resp.content).hexdigest(),
         "bytes": len(resp.content),
-        "url": URL.format(q=q),
+        "url": url,
         "downloaded_utc": dt.datetime.now(dt.UTC).isoformat(),
     }
     _save_manifest(manifest, data_dir)

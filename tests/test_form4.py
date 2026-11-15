@@ -94,3 +94,36 @@ def test_insider_signal_rules_come_from_prereg(data_dir):
     assert rows == [("9001",)]
     m = q(data_dir, "SELECT is_10b5_1_method FROM core_transactions WHERE filer_id = '9003'")
     assert m == [("footnote",)]
+
+
+def test_download_falls_back_to_new_sec_folder(tmp_path, monkeypatch):
+    import io
+
+    from cti.ingest import sec_form4
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("SUBMISSION.tsv", SUBMISSION)
+
+    class Resp:
+        def __init__(self, code, content=b""):
+            self.status_code, self.content = code, content
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise RuntimeError(self.status_code)
+
+    class Session:
+        urls: list[str] = []
+
+        def get(self, url, **kw):
+            self.urls.append(url)
+            return Resp(404) if "structureddata" in url else Resp(200, buf.getvalue())
+
+    monkeypatch.setenv("SEC_USER_AGENT", "test test@example.com")
+    monkeypatch.setattr(sec_form4, "SEC_MIN_INTERVAL_S", 0)
+    s = Session()
+    path = sec_form4.download("2026q2", s, data_dir=tmp_path)
+    assert path.exists() and len(s.urls) == 2 and "datastandardsinnovation" in s.urls[1]
+    manifest = (tmp_path / "raw" / "form4" / "MANIFEST.json").read_text()
+    assert "datastandardsinnovation" in manifest
