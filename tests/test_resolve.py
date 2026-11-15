@@ -144,3 +144,13 @@ def test_one_day_stub_history_does_not_count_as_priced():
     cands = pd.DataFrame([_cand("s1", "0000000009", "GONE", 1, 2, 5.0)])
     _, res = resolve(cands, sec_map, prices, build_calendar(DAYS), 0.25, 2.0, min_history_days=5)
     assert res.loc[0, "unmatched_reason"] == "ticker_not_in_price_source"
+
+
+def test_reused_ticker_listed_after_the_trade_is_flagged():
+    # "OLD" was a different company's ticker; today's prices for it start after the purchase.
+    later = _px("OLD", 10.0).iloc[5:]
+    prices = add_derived(pd.concat([_px("SPY", 400.0), later], ignore_index=True))
+    sec_map = pd.DataFrame({"cik": ["0000000008"], "name": ["X"], "ticker": ["ZZZ"], "exchange": ["NYSE"]})
+    cands = pd.DataFrame([_cand("r1", "0000000008", "OLD", 1, 2, 10.0)])
+    _, res = resolve(cands, sec_map, prices, build_calendar(DAYS), 0.25, 2.0, min_history_days=3)
+    assert res.loc[0, "unmatched_reason"] == "entry_before_price_history"

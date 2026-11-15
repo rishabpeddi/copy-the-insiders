@@ -37,6 +37,13 @@ from 2022 to 2026. The forward period is the only fully clean test.
   misses some plans. Report how many purchases each method excludes.
 - Free price data mostly leaves out delisted stocks. Final results must use CRSP or a vendor
   that includes delistings, or disclose the bias and estimate its size.
+  **Measured (full 2014–2026 ingest, yfinance):** 59.4% of dev-period purchases match a priced
+  security vs 83.3% in the test period (47.5% in 2014 up to 94.6% in 2026). The missing
+  companies are disproportionately ones that later delisted, so the dev sample is tilted toward
+  survivors more than the test sample. On free data, dev and test results are not comparable.
+- Ticker reuse is common. 5,419 purchases (3.5%) map to a ticker whose current price history
+  starts after the trade (e.g. SHLD: Sears Holdings then, a defense ETF since 2023). These are
+  excluded as `entry_before_price_history`, never priced with the wrong company.
 
 ## Open decisions to settle before tagging
 Found by ingesting 2024Q1 for real (2,015 candidate purchases across 688 issuers that quarter):

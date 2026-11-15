@@ -132,6 +132,14 @@ def write_quality_report(cands, secs, res, prices, calendar, cfg: Config, report
     shared = shared[shared > 1]
     by_q = res.assign(q=pd.to_datetime(res["public_date"]).dt.to_period("Q").astype(str)) \
         .groupby("q")["matched"].agg(["size", "mean"])
+    pub = pd.to_datetime(res["public_date"])
+    period_rows = []
+    for name, p in cfg["periods"].items():
+        m = pub >= pd.Timestamp(p["start"])
+        if p.get("end"):
+            m &= pub <= pd.Timestamp(p["end"])
+        period_rows.append(f"| {name} | {p['start']} to {p.get('end') or 'now'} | {int(m.sum()):,} | "
+                           f"{res.loc[m, 'matched'].mean():.1%} |")
 
     # Hand-audit sample: random matched transactions, with what's needed to check each by eye.
     k = min(int(cfg["resolution"]["audit_sample_size"]), matched)
@@ -160,6 +168,13 @@ Generated {generated} by `cti resolve`. Price source: **{cfg['data']['price_sour
 - Candidate transactions (after filing rules): **{n:,}**
 - Matched to a priced security: **{matched:,} ({matched / max(n, 1):.1%})**
 - Issuers: {issuers:,}; with a priced ticker: {issuers_matched:,} ({issuers_matched / max(issuers, 1):.1%})
+
+| period | dates | candidates | matched |
+|---|---|---:|---:|
+{chr(10).join(period_rows)}
+
+If the match rate differs a lot between dev and test, the two samples are biased differently
+(older periods lose more delisted companies), and dev results won't predict test results.
 
 {table(conf, matched, "Match confidence (matched)")}
 

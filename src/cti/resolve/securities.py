@@ -127,6 +127,10 @@ def resolve(candidates: pd.DataFrame, sec_map: pd.DataFrame, prices: pd.DataFram
 
     reason = r["unmatched_reason"].copy()
     reason[reason.isna() & r["entry_date"].isna()] = "entry_after_calendar_end"
+    # The ticker's price history starts after entry: a reused ticker (SHLD: Sears -> a 2023 ETF),
+    # a post-bankruptcy relisting, or an OTC->exchange uplisting. Not the same security's prices.
+    first_px = r["ticker"].map(px.groupby("ticker")["date"].min())
+    reason[reason.isna() & ~r["has_entry_price"] & (r["entry_date"] < first_px)] = "entry_before_price_history"
     reason[reason.isna() & ~r["has_entry_price"]] = "no_price_on_entry_date"
     reason[reason.isna() & (r["match_confidence"] == "mismatch")] = "price_mismatch"
     r["unmatched_reason"] = reason
