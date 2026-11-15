@@ -25,6 +25,37 @@ def ingest_form4(start: str = "2014Q1", end: str = "2026Q2") -> None:
         typer.echo(f"{q}: " + ", ".join(f"{k}={v:,}" for k, v in counts.items()))
 
 
+@ingest_app.command("reference")
+def ingest_reference() -> None:
+    """T-bills (FRED), SEC CIK->ticker map, SPY + 11 sector ETF prices."""
+    from cti.pipeline import ingest_reference as run
+
+    out = run(load_config())
+    typer.echo(f"reference tickers: {', '.join(out['reference_tickers'])}")
+    if out["missing"]:
+        typer.echo(f"MISSING: {out['missing']}", err=True)
+
+
+@ingest_app.command("prices")
+def ingest_prices(refetch: bool = typer.Option(False, help="Re-pull tickers already staged")) -> None:
+    """Prices for every ticker the insider candidates could map to. Run `cti build` first."""
+    from cti.pipeline import ingest_prices as run
+
+    typer.echo(f"fetched {run(load_config(), only_missing=not refetch)['requested']} tickers")
+
+
+@app.command()
+def resolve() -> None:
+    """Match candidates to securities, write warehouse tables and reports/data_quality.md."""
+    from cti.pipeline import run_resolution
+
+    s = run_resolution(load_config())
+    typer.echo(f"matched {s['matched']:,} / {s['candidates']:,} ({s['match_rate']:.1%})")
+    for k, v in s["reasons"].items():
+        typer.echo(f"  unmatched {k}: {v:,}")
+    typer.echo("report: reports/data_quality.md  audit: reports/audit/match_audit_sample.csv")
+
+
 @app.command()
 def build(model: list[str] = typer.Option(None, help="Only run these SQL models (file stems)")) -> None:
     """Run SQL models into data/warehouse.duckdb."""
@@ -70,6 +101,10 @@ def all_cmd(start: str = "2014Q1", end: str = "2026Q2", skip_ingest: bool = Fals
     if not skip_ingest:
         ingest_form4(start, end)
     build(None)
+    if not skip_ingest:
+        ingest_reference()
+        ingest_prices(False)
+    resolve()
     raise typer.Exit(subprocess.call([sys.executable, "-m", "pytest", "-q"], cwd=REPO_ROOT))
 
 

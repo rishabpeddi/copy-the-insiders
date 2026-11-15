@@ -23,6 +23,7 @@ def sql_params(cfg: Config, data_dir: Path = DATA_DIR) -> dict[str, str]:
         "insider_director": str("director" in ins["roles"]).upper(),
         "insider_exclude_10b5_1": str(bool(ins["exclude_10b5_1"])).upper(),
         "insider_min_value_usd": str(float(ins["min_value_usd"])),
+        "insider_title_exclude": ins["security_title_exclude_regex"].replace("'", "''"),
     }
 
 

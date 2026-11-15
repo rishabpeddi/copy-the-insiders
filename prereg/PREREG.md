@@ -44,8 +44,19 @@ Found by ingesting 2024Q1 for real (2,015 candidate purchases across 688 issuers
    2024Q1 is 2019-06-07). Form 4 is due within 2 business days. Proposal: add
    `groups.insider.max_filing_lag_days: 30` and drop older trades.
 2. **Obvious data-entry errors.** One MYCB purchase computes to $3.6 trillion (shares × price).
-   Proposal: in Phase 2, drop transactions whose reported price is more than 50% away from that
-   day's close, and report how many get dropped. Write the threshold into prereg.yaml.
+   Phase 2 now compares each reported price with that day's quoted close (`resolution` in
+   prereg.yaml): beyond 2x either way is unmatched as `price_mismatch`, and within ±25% earns
+   medium/high confidence. **Review these two numbers.** Note that the price check does not catch a
+   wrong *share count*, so a value cap or a check against shares outstanding may still be needed.
+4. **Non-common securities.** Preferred, depositary, warrant, unit and fund purchases are now
+   excluded by `security_title_exclude_regex` (67 of 2,015 candidates in 2024Q1). Review the pattern.
+   It also drops MLP "common units"; keep or allow them?
+5. **Funds and OTC listings.** Some issuers are funds (e.g. TAKMX) or trade OTC. The
+   `us_listed_common` universe filter (Phase 4) should require an exchange of NYSE, Nasdaq or
+   NYSE American from the SEC ticker map. Confirm that list.
+6. **Reverse splits missing from yfinance.** Several real purchases fail the price check because
+   yfinance has no record of the split (LENZ, AZTR, FLNT, STME, DHY). This goes away with CRSP;
+   with free data, those signals are lost (conservative, but they're the small caps).
 3. **Multiple owners on one filing.** Joint filings list several reporting owners for one trade.
    They currently count as separate signals (same security, so one position). Confirm that's intended.
 

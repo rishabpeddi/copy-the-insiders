@@ -14,6 +14,9 @@ ingest:
 
 build:
 	uv run cti build
+	uv run cti ingest reference
+	uv run cti ingest prices
+	uv run cti resolve
 
 test:
 	uv run pytest -q

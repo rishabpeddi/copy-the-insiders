@@ -9,7 +9,10 @@ SELECT
     filer_id,
     issuer_cik,
     issuer_ticker,
+    issuer_name,
+    security_title,
     trade_date,
+    price                     AS reported_price,
     filed_date                AS public_date,
     value_point,
     is_10b5_1_method
@@ -17,4 +20,5 @@ FROM core_transactions
 WHERE code IN ({insider_codes})
   AND (({insider_officer} AND is_officer) OR ({insider_director} AND is_director))
   AND (NOT {insider_exclude_10b5_1} OR NOT is_10b5_1)
-  AND value_point >= {insider_min_value_usd};
+  AND value_point >= {insider_min_value_usd}
+  AND NOT regexp_matches(lower(coalesce(security_title, '')), '{insider_title_exclude}');

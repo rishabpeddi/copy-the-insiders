@@ -18,18 +18,21 @@ SUBMISSION = """ACCESSION_NUMBER\tFILING_DATE\tPERIOD_OF_REPORT\tDOCUMENT_TYPE\t
 0001-20-000003\t06-FEB-2020\t04-FEB-2020\t4\t111\tAcme Corp\tACME
 0001-20-000004\t07-FEB-2020\t05-FEB-2020\t4\t222\tBeta Inc\tBETA
 0001-20-000005\t07-FEB-2020\t05-FEB-2020\t3\t222\tBeta Inc\tBETA
+0001-20-000006\t07-FEB-2020\t05-FEB-2020\t4\t111\tAcme Corp\tACME
 """
 OWNERS = """ACCESSION_NUMBER\tRPTOWNERCIK\tRPTOWNERNAME\tRPTOWNER_RELATIONSHIP\tRPTOWNER_TITLE
 0001-20-000001\t9001\tJane CEO\tDirector,Officer\tCEO
 0001-20-000002\t9001\tJane CEO\tDirector,Officer\tCEO
 0001-20-000003\t9002\tBig Holder\tTenPercentOwner\t
 0001-20-000004\t9003\tBob Director\tDirector\t
+0001-20-000006\t9004\tPat CFO\tOfficer\tCFO
 """
 TRANS = """ACCESSION_NUMBER\tNONDERIV_TRANS_SK\tSECURITY_TITLE\tTRANS_DATE\tTRANS_CODE\tTRANS_SHARES\tTRANS_PRICEPERSHARE\tTRANS_ACQUIRED_DISP_CD
 0001-20-000001\t1\tCommon\t03-FEB-2020\tP\t1000\t20\tA
 0001-20-000002\t1\tCommon\t03-FEB-2020\tP\t1000\t20\tA
 0001-20-000003\t1\tCommon\t04-FEB-2020\tP\t5000\t20\tA
 0001-20-000004\t1\tCommon\t05-FEB-2020\tP\t100\t50\tA
+0001-20-000006\t1\tDepositary Shares for Series B Preferred Stock\t05-FEB-2020\tP\t5000\t25\tA
 """
 FOOTNOTES = """ACCESSION_NUMBER\tFOOTNOTE_ID\tFOOTNOTE_TXT
 0001-20-000004\tF1\tPurchased under a Rule 10b5-1 trading plan adopted 2019.
@@ -47,7 +50,7 @@ def data_dir(tmp_path: Path) -> Path:
         zf.writestr("NONDERIV_TRANS.tsv", TRANS)
         zf.writestr("FOOTNOTES.tsv", FOOTNOTES)
     counts = stage(z, data_dir=tmp_path)
-    assert counts == {"SUBMISSION": 5, "REPORTINGOWNER": 4, "NONDERIV_TRANS": 4, "FOOTNOTES": 1}
+    assert counts == {"SUBMISSION": 6, "REPORTINGOWNER": 5, "NONDERIV_TRANS": 5, "FOOTNOTES": 1}
     build(load_config(), data_dir=tmp_path)
     return tmp_path
 
@@ -72,7 +75,7 @@ def test_parse_sec_date():
 
 def test_core_filings_keeps_form4_only_and_flags_amendments(data_dir):
     rows = q(data_dir, "SELECT filing_id, is_amendment, issuer_ticker FROM core_filings ORDER BY 1")
-    assert [r[0][-1] for r in rows] == ["1", "2", "3", "4"]  # the Form 3 is dropped
+    assert [r[0][-1] for r in rows] == ["1", "2", "3", "4", "6"]  # the Form 3 is dropped
     assert rows[1][1] is True and rows[0][2] == "ACME"
 
 
@@ -87,6 +90,7 @@ def test_insider_signal_rules_come_from_prereg(data_dir):
     rows = q(data_dir, "SELECT filer_id FROM signals_insider_candidates")
     # 9001: officer buy $20k -> kept. 9002: 10% owner, not officer/director -> out.
     # 9003: director but $5k < $10k minimum AND 10b5-1 footnote -> out.
+    # 9004: officer, $125k, but buying preferred depositary shares -> out by security_title rule.
     assert rows == [("9001",)]
     m = q(data_dir, "SELECT is_10b5_1_method FROM core_transactions WHERE filer_id = '9003'")
     assert m == [("footnote",)]

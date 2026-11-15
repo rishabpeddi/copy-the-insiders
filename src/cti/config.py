@@ -44,7 +44,7 @@ class Config:
 
 
 REQUIRED_KEYS = {"version", "periods", "universe", "groups", "portfolio", "delisting",
-                 "costs", "benchmarks", "inference", "decision_rule", "sensitivity"}
+                 "costs", "benchmarks", "inference", "decision_rule", "sensitivity", "data", "resolution"}
 
 
 def load_config(path: Path = PREREG_PATH) -> Config:

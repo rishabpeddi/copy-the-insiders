@@ -19,6 +19,8 @@ groups:
     roles: [officer, director]
     exclude_10b5_1: true
     min_value_usd: 10_000
+    # Form 4 SECURITY_TITLE matched case-insensitively; matches are not common stock and are dropped.
+    security_title_exclude_regex: 'preferred|depositary|warrant|\bnotes?\b|debenture|\bfund\b|\brights?\b|\bunits?\b|option'
     entry: next_open_after_filed_date
   congress:
     asset_types: [common_stock]
@@ -32,6 +34,18 @@ portfolio:
   one_position_per_ticker: true   # a repeat buy signal on a held ticker does NOT reset the hold clock
   cash_return: TBILL
   starting_nav: 1.0
+
+data:
+  price_source: yfinance         # PROTOTYPE ONLY: survivors-only. Swap to crsp or a vendor before tagging.
+  price_history_start: 2013-12-01
+
+resolution:
+  # Reported Form 4 price vs that day's quoted close. Catches ticker reuse and data-entry errors.
+  price_check_tight_pct: 0.25    # within +/-25%: medium/high confidence
+  price_check_max_ratio: 2.0     # beyond 2x either way: unmatched (price_mismatch)
+  min_price_history_days: 20     # yfinance returns 1-day stubs for delisted tickers; those don't count as priced
+  audit_sample_size: 100
+  audit_seed: 20260101
 
 delisting:
   acquired: deal_price
