@@ -87,7 +87,30 @@ from 2022 to 2026. The forward period is the only fully clean test.
 - **Sector clone** uses current SIC codes mapped to sector ETFs, an approximation of GICS.
 
 ## Power (dev period, primary configuration; recomputed after the changes below)
-_Filled in from `reports/dev_results/SUMMARY*.md`._
+From `reports/dev_results/SUMMARY*.md`, yfinance prices (survivors only), 4.49-year test period, 80% power.
+
+| Group | Residual vol (FF5+Mom) | Tracking error vs SPY | MDA, factor alpha | MDA, vs SPY | Test CI half-width |
+|---|---:|---:|---:|---:|---:|
+| insider | 3.70% (R² 0.97) | 11.47% | **4.9% / yr** | 15.2% / yr | ±3.4% |
+| House | 3.53% (R² 0.96) | 5.67% | **4.7% / yr** | 7.5% / yr | ±3.3% |
+
+Factor adjustment cuts the minimum detectable effect by about two-thirds for insiders. Their
+tracking error vs SPY was mostly size and value exposure (loadings: SMB +0.66, HML +0.29).
+
+**What the test can and cannot show.** It can reliably detect a true factor alpha of about 5%
+a year or more. A smaller true edge, such as the 1–3% that much of the literature reports for insider
+buying, will probably come out *inconclusive*, and that does **not** mean the edge is absent. The
+`rules_out` rule (adjusted CI upper bound < 2%) can only trigger if the estimate comes in below
+about −1.3% to −1.4%, i.e. it can rule out a 2% edge only if the strategy actually lost money
+after factor adjustment.
+
+**Dev-period results (descriptive, not a test):**
+- Insider primary: factor alpha +2.2% a year [95% CI +0.5%, +5.6%]. It doesn't hold up under
+  25 bps costs (+1.2% [−0.3%, +5.0%]) or the survivorship bounds (0%: +0.8% [−0.7%, +3.6%];
+  SPY: +1.2% [−0.1%, +3.8%]).
+- House primary: factor alpha −0.6% [−3.3%, +1.7%]. No variant is distinguishable from zero.
+- The −100% bound (every missing company worthless within the hold) wipes out both groups. That's
+  a deliberately extreme worst case, not a plausible outcome.
 
 ## Decisions still open before tagging
 1. **Hand audits** (you): `reports/audit/match_audit_sample.csv` and
