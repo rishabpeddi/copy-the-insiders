@@ -118,6 +118,17 @@ def write_quality(res: pd.DataFrame, docs: pd.DataFrame, cfg: Config, reports_di
         yrows.append(f"| {y} | {int(row['ptrs']):,} | {int(row['parsed']):,} | {int(row['paper']):,} "
                      f"| {size:,} | {rate} |")
 
+    # Who files on paper? If paper filers differ systematically, the parsed sample isn't the population.
+    mem = docs.assign(member=docs["last"].str.upper() + ", " + docs["first"].str.upper() + " (" + docs["state_dst"] + ")",
+                      paper=docs["status"].eq("paper_scan_not_parsed"))
+    per = mem.groupby("member")["paper"].agg(["size", "mean"])
+    kinds = {"electronic only": int((per["mean"] == 0).sum()), "paper only": int((per["mean"] == 1).sum()),
+             "mixed": int(((per["mean"] > 0) & (per["mean"] < 1)).sum())}
+    top_paper = per[per["mean"] > 0].sort_values(["mean", "size"], ascending=False).head(15)
+    paper_rows = "\n".join(f"| {m} | {int(r['size'])} | {r['mean']:.0%} |" for m, r in top_paper.iterrows())
+    paper_share_ptrs = float(mem["paper"].mean())
+    top10_share = float(per.sort_values("size", ascending=False).head(10)["size"].sum() / max(len(mem), 1))
+
     k = min(int(cfg["resolution"]["audit_sample_size"]), matched)
     audit = res[res["matched"]].sample(n=k, random_state=int(cfg["resolution"]["audit_seed"]))
     audit_dir = reports_dir / "audit"
@@ -151,6 +162,18 @@ Paper scans have no text layer; parsing them needs OCR (not done), so they are a
 | year | PTRs | parsed (electronic) | paper scans | in-scope txns | matched |
 |---|---:|---:|---:|---:|---:|
 {nl.join(yrows)}
+
+## Electronic vs paper filers
+{len(per):,} members filed PTRs: {kinds['electronic only']:,} electronic only, {kinds['paper only']:,} paper only,
+{kinds['mixed']:,} both. {paper_share_ptrs:.1%} of all PTRs are paper. The 10 most frequent filers account for
+{top10_share:.1%} of PTRs, so a few members drive much of the sample. Members with the highest paper share:
+
+| member | PTRs | paper |
+|---|---:|---:|
+{paper_rows}
+
+Paper filers' trades are missing from every result. If they trade differently, the House result
+describes electronic filers, not all members.
 
 ## Hand audit
 `reports/audit/congress_match_audit_sample.csv`: {k} random matched transactions. Fill `audit_correct`.

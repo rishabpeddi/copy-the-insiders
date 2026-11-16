@@ -117,3 +117,63 @@ def test_gross_return_is_the_stocks_own_return_while_held():
     r = run(sig, px, cal(5), NO_COST)
     a = r.positions.set_index("security_id").loc["A"]
     assert a["gross_return"] == pytest.approx(0.2)
+
+
+# --- monthly_drift (pre-registered primary rule) -------------------------------------------------
+# Calendar: Mon 2020-01-27 .. ; index 5 = Mon 2020-02-03 is the first trading day of February.
+MD = list(pd.bdate_range("2020-01-27", periods=7).date)
+DRIFT = EngineConfig(hold_trading_days=50, cost_bps_per_side=0.0, rebalance="monthly_drift")
+
+
+def _px(rows):
+    return pd.DataFrame([{"security_id": s, "date": MD[i], "open": o, "close": c} for s, i, o, c in rows])
+
+
+def _sig(sid, side, sec, filer, i, weight=1.0):
+    return {"signal_id": sid, "side": side, "security_id": sec, "filer_id": filer,
+            "public_date": MD[i] - pd.Timedelta(days=1), "entry_date": MD[i], "weight": weight}
+
+
+def test_monthly_drift_new_entry_funded_pro_rata_then_reset_at_month_start():
+    # i1: A in at 10 -> A=1.0.  i2: B enters: A=1.0 at open, B target 1/2 of 1.0 funded from A -> 0.5/0.5.
+    #     A closes 20 -> A=1.0, B=0.5.  i3: C enters, E=1.5, C target 0.5 funded pro rata from A and B:
+    #     A = 1.0 - 0.5*(1.0/1.5) = 0.6667, B = 0.5 - 0.5*(0.5/1.5) = 0.3333 (daily reset would give 0.5 each).
+    #     i5 (Feb 3) month start: reset to 0.5 / 0.5 / 0.5.
+    rows = [("A", 1, 10, 10), ("A", 2, 10, 20)] + [("A", i, 20, 20) for i in range(3, 7)]
+    rows += [("B", i, 10, 10) for i in range(2, 7)] + [("C", i, 5, 5) for i in range(3, 7)]
+    sig = pd.DataFrame([_sig("a", "buy", "A", "F", 1), _sig("b", "buy", "B", "G", 2), _sig("c", "buy", "C", "H", 3)])
+    before = run(sig, _px(rows), MD[:5], DRIFT).positions.set_index("security_id")["exit_value"]
+    assert before.round(4).to_dict() == {"A": 0.6667, "B": 0.3333, "C": 0.5}
+    after = run(sig, _px(rows), MD[:6], DRIFT).positions.set_index("security_id")["exit_value"]
+    assert after.round(4).to_dict() == {"A": 0.5, "B": 0.5, "C": 0.5}
+
+
+def test_monthly_drift_exit_proceeds_wait_in_cash():
+    # Flat prices, hold 2. A in i1, B in i2 (0.5/0.5). i3: A exits -> cash 0.5, B stays 0.5 (no reset).
+    cfg = EngineConfig(hold_trading_days=2, cost_bps_per_side=0.0, rebalance="monthly_drift")
+    rows = [("A", i, 10, 10) for i in range(1, 5)] + [("B", i, 10, 10) for i in range(2, 5)]
+    sig = pd.DataFrame([_sig("a", "buy", "A", "F", 1), _sig("b", "buy", "B", "G", 2)])
+    r = run(sig, _px(rows), MD[:5], cfg)
+    assert r.daily.loc[3, "cash"] == pytest.approx(0.5) and r.daily.loc[3, "n_positions"] == 1
+    assert r.positions.set_index("security_id").loc["B", "exit_value"] == pytest.approx(0.5)
+
+
+def test_monthly_drift_costs_on_entry_funding():
+    # 10 bps. i1: buy A 1.0, cost 0.001 -> A 0.999. i2: B target 0.4995 sold from A and bought:
+    # turnover 0.999, cost 0.000999 taken from B -> B 0.498501, A 0.4995, NAV 0.998001.
+    cfg = EngineConfig(hold_trading_days=50, cost_bps_per_side=10.0, rebalance="monthly_drift")
+    rows = [("A", i, 10, 10) for i in range(1, 4)] + [("B", i, 10, 10) for i in range(2, 4)]
+    sig = pd.DataFrame([_sig("a", "buy", "A", "F", 1), _sig("b", "buy", "B", "G", 2)])
+    r = run(sig, _px(rows), MD[:3], cfg)
+    assert r.daily.loc[2, "nav"] == pytest.approx(0.998001)
+    v = r.positions.set_index("security_id")["exit_value"]
+    assert v["A"] == pytest.approx(0.4995) and v["B"] == pytest.approx(0.498501)
+
+
+def test_signal_weighting_by_amount():
+    # A weight 3 (100% alone), then B weight 1 enters: B target 1/4 of equity funded from A -> 0.75 / 0.25.
+    cfg = EngineConfig(hold_trading_days=50, cost_bps_per_side=0.0, rebalance="monthly_drift", weighting="signal")
+    rows = [("A", i, 10, 10) for i in range(1, 4)] + [("B", i, 10, 10) for i in range(2, 4)]
+    sig = pd.DataFrame([_sig("a", "buy", "A", "F", 1, weight=3.0), _sig("b", "buy", "B", "G", 2, weight=1.0)])
+    v = run(sig, _px(rows), MD[:3], cfg).positions.set_index("security_id")["exit_value"]
+    assert v["A"] == pytest.approx(0.75) and v["B"] == pytest.approx(0.25)

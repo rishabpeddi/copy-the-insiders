@@ -6,13 +6,15 @@ version: 1
 periods:
   dev:     {start: 2014-01-01, end: 2021-12-31}
   test:    {start: 2022-01-01, end: 2026-06-30}
-  forward: {start: 2026-07-01}
+  forward: {start: 2026-07-01, end: 2028-06-30}   # pre-registered secondary test, fixed end date
 
 universe:
   min_price: 5                   # nominal close on the last trading day before entry
   min_mcap_usd: 300_000_000      # SEC cover-page shares x that close
   us_listed_common: true
-  exchanges: [NYSE, Nasdaq, CBOE, TXSE]   # SEC ticker map (current listing); OTC and unknown excluded
+  # SEC ticker map (current listing). The map labels NYSE American and NYSE Arca listings "NYSE";
+  # OTC and unknown are excluded.
+  exchanges: [NYSE, Nasdaq, CBOE, TXSE]
   shares_lag_days: 14            # a cover-page share count is usable 14 days after its date
   shares_fallback_lag_days: 90   # weighted-average basic shares (10-Q/10-K), for multi-class filers
   shares_max_age_days: 400       # older share counts count as unknown
@@ -23,17 +25,26 @@ groups:
     codes: [P]
     roles: [officer, director]
     exclude_10b5_1: true
+    # primary: SEC checkbox where it exists (Apr 2023+), else footnote text.
+    # sensitivity footnote_only: footnote text in every period, so the rule is the same across dev/test.
+    tenb51_method: checkbox_else_footnote
+    max_filing_lag_days: 30        # trade-to-filing; Form 4 is due in 2 business days, very late ones are mostly corrections
     min_value_usd: 10_000
     # Form 4 SECURITY_TITLE matched case-insensitively; matches are not common stock and are dropped.
     security_title_exclude_regex: 'preferred|depositary|warrant|\bnotes?\b|debenture|\bfund\b|\brights?\b|\bunits?\b|option'
     entry: next_open_after_filed_date
   congress:
-    asset_types: [common_stock]
+    asset_types: [common_stock]    # House asset code ST, or no code (pre-2019 PTRs) with a ticker
     entry: next_open_after_filed_date
+    max_filing_lag_days: 90        # twice the STOCK Act's 45-day limit; late filing is common and real
+    min_match_confidence: medium   # a wrong-company match is worse than a missing one; low is a sensitivity run
 
 portfolio:
   weighting: equal
-  rebalance: on_entry_or_exit     # rebalance to equal weight on any day a position opens or closes
+  # monthly_drift: a new entry gets its 1/N share of NAV, funded from cash, then pro rata from
+  # holdings; weights drift otherwise; full reset to target weights on the first trading day of
+  # each month. (Was on_entry_or_exit, now a sensitivity run: see the PREREG.md changelog.)
+  rebalance: monthly_drift
   hold_trading_days: 126
   early_exit_on_filer_sale: true
   one_position_per_ticker: true   # a repeat buy signal on a held ticker does NOT reset the hold clock
@@ -63,10 +74,13 @@ costs:
   stress_bps_per_side: 25
 
 benchmarks:
-  primary: SPY_TR
+  descriptive: SPY_TR            # headline "vs. the market" number for readers; not the primary test
   secondary: sector_clone_monthly
 
 inference:
+  # Primary test statistic: annualized alpha from an OLS of daily strategy excess returns on the
+  # Fama-French 5 factors (2x3) + momentum (Ken French data library), block-bootstrap CI.
+  primary_metric: ff5_mom_alpha
   ci: block_bootstrap
   block_months: 6
   reps: 10000
@@ -74,11 +88,24 @@ inference:
   multiple_testing: holm
   seed: 20260101
 
-decision_rule:
+decision_rule:                   # applied to primary_metric, Holm-adjusted across the two groups
   beats: "adj_ci_low > 0"
   rules_out: "adj_ci_high < 0.02"
+  otherwise: inconclusive        # report the MDA: the edge size the test could and could not have detected
 
+# Each sensitivity run changes ONE thing from the primary configuration.
 sensitivity:
-  congress_sizing: [low, mid, high]
-  costs: [base, stress]
-  hold_trading_days: [63, 126]
+  costs: [stress]
+  hold_trading_days: [63]
+  rebalance: [on_entry_or_exit]
+  filing_lag: [none]                      # no lag cutoff, both groups
+  insider_10b5_1: [footnote_only]
+  congress_match_confidence: [low]        # include low-confidence matches
+  congress_weighting: [amount_mid]        # weight by the midpoint of the disclosed range (replaces low/mid/high sizing)
+  survivorship_bounds: [minus_100, zero, benchmark]   # unmatched purchases priced at -100% / 0% / SPY over the hold
+survivorship_bounds:
+  # Unmatched purchases (ticker not in the price source, or listed after the trade) can't be
+  # universe-filtered, so each is included with probability = that year's universe pass rate
+  # among matched purchases (seeded), to keep the bound's portfolio composition comparable.
+  reasons: [ticker_not_in_price_source, entry_before_price_history]
+  seed: 20260101

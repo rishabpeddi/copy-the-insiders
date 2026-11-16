@@ -38,6 +38,7 @@ FROM with_sh;
 
 CREATE OR REPLACE TABLE signals_congress AS
 SELECT txn_id AS signal_id, 'buy' AS side, security_id, filer_id, public_date, entry_date,
+       trade_date, date_diff('day', trade_date, public_date) AS filing_lag_days,
        ticker, issuer_name, amount_low, amount_high,
        CASE WHEN amount_high IS NULL THEN amount_low ELSE (amount_low + amount_high) / 2 END AS amount_mid,
        mcap_usd, match_confidence

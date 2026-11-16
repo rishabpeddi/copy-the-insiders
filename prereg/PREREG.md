@@ -1,91 +1,116 @@
 # Pre-registration: copy-the-insiders
 
-**Status: DRAFT, not tagged.** `prereg.yaml` is the authority; this file explains it.
+**Status: DRAFT, not tagged.** `prereg.yaml` is the authority; this file explains it. Every rule
+change made after dev-period returns were first computed (2026-11-15) is listed in the
+[Changelog](#changelog) with a reason that does not refer to returns.
 
 ## Question
-Does a portfolio that copies (a) open-market purchases by corporate officers/directors and
-(b) stock purchases disclosed by members of Congress, entered only after the filing is public,
-beat SPY total return and a sector-matched ETF clone after costs?
+Does a portfolio that copies (a) open-market purchases by corporate officers and directors and
+(b) stock purchases disclosed by members of the House, entered only after the filing is public,
+earn a positive risk-adjusted return after costs?
+
+- **Primary metric:** annualized alpha from regressing daily strategy excess returns on the
+  Fama-French 5 factors (2x3) plus momentum, with a 6-month block-bootstrap 95% CI, Holm-adjusted
+  across the two groups.
+- **Descriptive headline:** return vs. SPY total return (what an investor would compare to).
+- **Secondary benchmark:** a monthly sector-ETF clone of the strategy's sector weights
+  (SIC → Select Sector SPDR mapping; an approximation).
+
+**Decision rule** (on the primary metric, per group): *beats* if the adjusted CI lower bound > 0;
+*rules out a 2%+ edge* if the adjusted CI upper bound < 2%; otherwise **inconclusive**, reported
+with the minimum detectable alpha, i.e. the size of edge the test could and could not have detected.
 
 ## Periods
 | Period | Dates | Use |
 |---|---|---|
-| dev | 2014-01-01 to 2021-12-31 | Build and debug. Rules may change here. |
-| test | 2022-01-01 to 2026-06-30 | Run once, after `cti prereg tag`. |
-| forward | 2026-07-01 onward | Truly out of sample, updated monthly. |
+| dev | 2014-01-01 to 2021-12-31 | Build and debug. Congress data starts in 2015, so its dev run starts at its first signal. |
+| test | 2022-01-01 to 2026-06-30 | Primary test. Run once, after `cti prereg tag`. |
+| forward | 2026-07-01 to 2028-06-30 | Pre-registered secondary test with a fixed end date. |
 
 Honesty note: the test period is already in the past. The tag proves the rules were fixed
 before the code computed any test-period returns. It cannot prove I never saw a market chart
 from 2022 to 2026. The forward period is the only fully clean test.
 
 ## Rules and rationale
-- **Entry**: open of the first trading day after the filing date. That is always after the
-  trade became public, and it avoids fetching EDGAR acceptance timestamps.
-- **Rebalancing**: back to equal weight on any day a position opens or closes. Cost =
-  bps × turnover, where turnover = Σ|target − current| computed on pre-cost equity; the cost is
-  then taken pro rata from the new targets.
-- **Exits**: whichever comes first: (1) the open `hold_trading_days` trading days after entry,
-  (2) the open after a sale by any source filer of that position is disclosed, or (3) delisting
-  (the delisting return is applied at that day's close).
-- **One position per ticker**: a repeat buy while the ticker is held adds that filer to the
-  position's sources but does not reset the hold clock.
-- **Cash** earns the T-bill return.
+- **Entry**: open of the first trading day after the filing date, which is always after the trade
+  became public.
+- **Insider filters**: officer or director; open-market purchase (code P); at least $10k; not
+  under a 10b5-1 plan (SEC checkbox where it exists, footnote text before April 2023); common
+  stock only (title excludes preferred, depositary, warrants, notes, funds, rights, units incl.
+  MLP units, options); filed at most 30 days after the trade.
+- **Congress filters**: House PTR purchase of a stock (asset code ST, or no code with a ticker on
+  pre-2019 forms); filed at most 90 days after the trade; match confidence medium or high.
+- **Universe (both)**: last close before entry ≥ $5; market cap ≥ $300M from SEC share counts
+  already public at entry; listed on NYSE (incl. American/Arca), Nasdaq, CBOE or TXSE.
+- **Portfolio**: equal weight. A new position gets 1/N of NAV, funded from cash first, then pro
+  rata from holdings. Weights drift otherwise, and exit proceeds earn T-bills until the next entry
+  or month start. Everything resets to equal weight on the first trading day of each month. Cost
+  = 10 bps per side on traded value.
+- **Exits**, whichever comes first: 126 trading days after entry; the open after a disclosed sale of
+  that stock by any of the position's source filers; delisting.
+- **One position per ticker**: a repeat buy adds a source filer but doesn't reset the hold clock.
 
-## Known measurement issues (record before the test run)
-- The SEC's structured `AFF10B5ONE` flag only exists for filings since the April 2023 rule.
-  Before that, the 10b5-1 exclusion relies on searching footnote text for "10b5-1", which
-  misses some plans. Report how many purchases each method excludes.
-- Free price data mostly leaves out delisted stocks. Final results must use CRSP or a vendor
-  that includes delistings, or disclose the bias and estimate its size.
-  **Measured (full 2014–2026 ingest, yfinance):** 59.4% of dev-period purchases match a priced
-  security vs 83.3% in the test period (47.5% in 2014 up to 94.6% in 2026). The missing
-  companies are disproportionately ones that later delisted, so the dev sample is tilted toward
-  survivors more than the test sample. On free data, dev and test results are not comparable.
-- Ticker reuse is common. 5,419 purchases (3.5%) map to a ticker whose current price history
-  starts after the trade (e.g. SHLD: Sears Holdings then, a defense ETF since 2023). These are
-  excluded as `entry_before_price_history`, never priced with the wrong company.
-
-## Open decisions to settle before tagging
-Found by ingesting 2024Q1 for real (2,015 candidate purchases across 688 issuers that quarter):
-1. **Late filings.** Some purchases are filed years after the trade (the oldest trade date in
-   2024Q1 is 2019-06-07). Form 4 is due within 2 business days. Proposal: add
-   `groups.insider.max_filing_lag_days: 30` and drop older trades.
-2. **Obvious data-entry errors.** One MYCB purchase computes to $3.6 trillion (shares × price).
-   Phase 2 now compares each reported price with that day's quoted close (`resolution` in
-   prereg.yaml): beyond 2x either way is unmatched as `price_mismatch`, and within ±25% earns
-   medium/high confidence. **Review these two numbers.** Note that the price check does not catch a
-   wrong *share count*, so a value cap or a check against shares outstanding may still be needed.
-4. **Non-common securities.** Preferred, depositary, warrant, unit and fund purchases are now
-   excluded by `security_title_exclude_regex` (67 of 2,015 candidates in 2024Q1). Review the pattern.
-   It also drops MLP "common units"; keep or allow them?
-5. **Funds and OTC listings.** Some issuers are funds (e.g. TAKMX) or trade OTC. The
-   `us_listed_common` universe filter (Phase 4) should require an exchange of NYSE, Nasdaq or
-   NYSE American from the SEC ticker map. Confirm that list.
-6. **Reverse splits missing from yfinance.** Several real purchases fail the price check because
-   yfinance has no record of the split (LENZ, AZTR, FLNT, STME, DHY). This goes away with CRSP;
-   with free data, those signals are lost (conservative, but they're the small caps).
-3. **Multiple owners on one filing.** Joint filings list several reporting owners for one trade.
-   They currently count as separate signals (same security, so one position). Confirm that's intended.
-
-## Minimum detectable alpha (fill in after Phase 4/5 dev runs, before tagging)
-| Group | Tracking error (ann.) | MDA at 80% power (4.5-year test) |
+## Sensitivity runs (each changes one thing from the primary)
+| Run | Change | Why |
 |---|---|---|
-| insider | 11.8% (dev, base, yfinance) | **15.6% / year** |
-| congress | TBD | TBD |
+| `costs_stress` | 25 bps per side | Cost uncertainty for small caps |
+| `hold_63` | 63-day hold | Shorter holding horizon |
+| `rebalance_on_entry_or_exit` | Daily reset to equal weight (the original rule) | Shows what the changed rule does |
+| `filing_lag_none` | No filing-lag cutoff | Shows what the cutoff removes |
+| `10b5_1_footnote_only` (insider) | Footnote text in every period, ignoring the 2023+ checkbox | The same 10b5-1 rule on both sides of the dev/test boundary |
+| `confidence_low` (Congress) | Include low-confidence matches | Shows what dropping them changes |
+| `weighting_amount_mid` (Congress) | Weight by the midpoint of the disclosed range | Tests whether bigger disclosed trades do better (replaces the low/mid/high sizing check, which did nothing under equal weighting) |
+| `bound_minus_100` / `bound_zero` / `bound_benchmark` | Add unmatched purchases priced at −100% / 0% / SPY over the hold | Survivorship bounds (below) |
 
-**What this means.** With an 11.8% tracking error, a 4.5-year test can only reliably detect an
-alpha of about 16% a year. A realistic insider-buying alpha of a few percent a year will almost
-certainly come out *inconclusive*, and the `rules_out` rule (`adj_ci_high < 0.02`) needs a CI
-about ±2% wide, which this test cannot produce. Options to decide **before tagging**:
-1. Accept that "inconclusive" is the likely outcome and say so up front (valid, honest).
-2. Lower tracking error with a closer benchmark: an equal-weight or small/mid-cap index, or the
-   sector clone, instead of SPY as the primary. (Dev: beta 1.13, ~360 mostly small/mid stocks.)
-3. Weight positions by signal strength or cap the number of names. Fewer names usually
-   *raises* tracking error, though, so this rarely helps power.
-4. Lengthen the evaluation by counting the forward period too (from 2026-07-01).
+## Known measurement issues
+- **Survivorship (free prices).** yfinance mostly lacks delisted stocks. 59.4% of dev-period insider
+  purchases match a priced security vs 83.3% in the test period (47.5% in 2014 rising to 94.6% in
+  2026), so the samples are biased differently. **Plan: CRSP via WRDS before the test run.**
+  Without it, the survivorship bounds are reported next to every result. They add unmatched
+  purchases (no price data, or a ticker listed after the trade), each included with probability
+  equal to that year's universe pass rate among matched purchases (seeded), priced at −100%, 0%,
+  or SPY. If the conclusion is the same under all three, the bias doesn't change the answer; if it
+  flips, the report says so.
+- **10b5-1 classification changes at the dev/test boundary.** The SEC checkbox exists only from April
+  2023. Footnote text probably misses some plans before that. The report counts how many purchases
+  each method flags and where they disagree, and the `10b5_1_footnote_only` run applies one method
+  to both periods.
+- **House coverage.** About a quarter of House PTRs are paper scans with no text layer (46% in
+  2015, about 13% in 2024). They aren't parsed (OCR is future work). Coverage by year is reported in
+  `reports/data_quality_congress.md`, so a cleaner recent sample can't stand in silently for the
+  full population. Senate PTRs aren't included yet.
+- **Ticker reuse.** 5,419 insider purchases (3.5%) map to a ticker whose current history starts after
+  the trade (e.g. SHLD: Sears then, a defense ETF now). They are excluded, never mispriced. For
+  Congress, tickers are mapped through the issuer's own Form 4 ticker history at the trade date.
+- **Reverse splits missing from yfinance** make some real purchases fail the price check (LENZ,
+  AZTR, FLNT). They are lost on free data; CRSP fixes this.
+- **Sector clone** uses current SIC codes mapped to sector ETFs, an approximation of GICS.
 
-Dev results (not a test of anything): CAGR 14.4% vs SPY 14.7%; active return +0.9%/yr
-[95% CI −5.6%, +9.8%]; beta-adjusted alpha −1.0%/yr; 25 bps costs turn both negative.
-Full table: `reports/dev_results/SUMMARY.md`.
-Turnover is 8.9× a year, about half of it from re-equalizing weights on every entry/exit day
-(nearly every day). That's the pre-registered rule working as written; it costs ~0.9%/yr at 10 bps.
+## Power (dev period, primary configuration; recomputed after the changes below)
+_Filled in from `reports/dev_results/SUMMARY*.md`._
+
+## Decisions still open before tagging
+1. **Hand audits** (you): `reports/audit/match_audit_sample.csv` and
+   `reports/audit/congress_match_audit_sample.csv`. Report accuracy with a CI (e.g. 97/100, 95% CI 91–99%).
+2. **CRSP/WRDS access**, or proceed with the survivorship bounds as the stated limit.
+3. **Senate eFD**: its public-use agreement must be accepted personally before Senate data can be added.
+4. **Joint filings**: several reporting owners on one Form 4 count as separate signals for the same
+   security (one position). Confirm.
+
+## Changelog
+Dev-period returns were first computed on **2026-11-15** (Phase 4). Rules set before that were
+fixed without seeing any returns: filing rules, the security-title pattern, price-check thresholds,
+minimum price history, the universe filter and its share-count lags, the exchange list.
+
+| Date | Change | Reason (not returns) |
+|---|---|---|
+| 2026-11-15 | `portfolio.rebalance`: `on_entry_or_exit` → `monthly_drift`; the old rule kept as a sensitivity run | Investability. No real copier re-equalizes a 400-stock book nearly every day; the old rule generated about half of all turnover. The new rule is what a person following these filings could actually run. |
+| 2026-11-15 | Primary metric: return vs SPY → FF5 + momentum alpha; SPY kept as the descriptive headline | Power. Most of the 11.8% tracking error vs SPY is size/value exposure, not stock selection. Chosen on residual volatility measured on dev, not on alpha. |
+| 2026-11-15 | Forward period given a fixed end (2028-06-30) as a pre-registered secondary test | More out-of-sample data later without loosening the primary test |
+| 2026-11-15 | Filing-lag cutoffs: insiders 30 days, Congress 90 days; no-cutoff sensitivity run | Data quality. Form 4 is due in 2 business days, so very late filings are mostly corrections. The STOCK Act allows 45 days, and twice that keeps legitimate late filers. |
+| 2026-11-15 | Congress: low-confidence matches dropped from the primary; included in a sensitivity run | Data quality. A wrong-company match (e.g. ENI matched to Endonovo) is worse than a missing one. |
+| 2026-11-15 | Congress sizing check `[low, mid, high]` → amount-weighted sensitivity run | The old check had no effect under equal weighting |
+| 2026-11-15 | 10b5-1 footnote-only sensitivity run; 10b5-1 and lag filters moved from SQL to the runner (the same candidates for every run) | Measurement consistency across the dev/test boundary |
+| 2026-11-15 | Survivorship-bound runs (−100% / 0% / SPY) | Coverage differs between periods. Shows the bias rather than hiding it. |
+| 2026-11-15 | Confirmed: MLP units excluded for both groups; exchanges NYSE (the SEC map includes American/Arca under "NYSE"), Nasdaq, CBOE, TXSE | Different tax and legal structure from common stock; the same rule for both groups |
+| 2026-11-15 | Sector clone connected as the secondary benchmark (SIC → sector ETF) | It was specified in the original plan but not yet built |

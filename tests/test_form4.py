@@ -89,6 +89,7 @@ def test_amendment_duplicate_keeps_earliest_public_filing(data_dir):
 def test_insider_signal_rules_come_from_prereg(data_dir):
     rows = q(data_dir, "SELECT filer_id FROM signals_insider_candidates")
     # 9001: officer buy $20k -> kept. 9002: 10% owner, not officer/director -> out.
+    # 9003 is now out on value alone; its 10b5-1 flag is carried for the runner to apply.
     # 9003: director but $5k < $10k minimum AND 10b5-1 footnote -> out.
     # 9004: officer, $125k, but buying preferred depositary shares -> out by security_title rule.
     assert rows == [("9001",)]

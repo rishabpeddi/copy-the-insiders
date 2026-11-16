@@ -82,8 +82,9 @@ def prereg_tag() -> None:
 @app.command("run")
 def run_cmd(period: str = typer.Option("dev", help="dev | test"),
             final: bool = False, rerun: bool = False, reason: str = "",
-            group: str = typer.Option("insider", help="insider | congress")) -> None:
-    """Backtest a period. Test-period runs require the tagged config and --final."""
+            group: str = typer.Option("insider", help="insider | congress"),
+            only: list[str] = typer.Option(None, help="Run only these scenario names")) -> None:
+    """Backtest a period: the primary scenario plus every pre-registered sensitivity run."""
     from cti.lock import assert_unlocked_for
 
     cfg = load_config()
@@ -99,14 +100,7 @@ def run_cmd(period: str = typer.Option("dev", help="dev | test"),
     from cti.backtest.report import write_dev_report
     from cti.backtest.runner import run_period
 
-    sens = cfg["sensitivity"]
-    base_hold = int(cfg.portfolio["hold_trading_days"])
-    for cost in sens["costs"]:
-        for hold in sens["hold_trading_days"]:
-            name = cost if hold == base_hold else f"{cost}_hold{hold}"
-            m = run_period(cfg, period, scenario=name, cost=cost, hold=hold, group=group)["metrics"]
-            typer.echo(f"{name:16} CAGR {m['cagr']:7.2%}  SPY {m['spy_cagr']:7.2%}  "
-                       f"active {m['active_return_ann']:+.2%} [{m['active_ci_low']:+.2%}, {m['active_ci_high']:+.2%}]")
+    run_period(cfg, period, group=group, only=only or None, log=lambda m: typer.echo(m))
     typer.echo(f"report: {write_dev_report(cfg, group=group)}")
 
 
@@ -178,7 +172,8 @@ def all_cmd(start: str = "2014Q1", end: str = "2026Q3", skip_ingest: bool = Fals
         ingest_shares()
     resolve()
     signals()
-    run_cmd("dev", False, False, "", "insider")
+    run_cmd("dev", False, False, "", "insider", None)
+    run_cmd("dev", False, False, "", "congress", None)
     raise typer.Exit(subprocess.call([sys.executable, "-m", "pytest", "-q"], cwd=REPO_ROOT))
 
 

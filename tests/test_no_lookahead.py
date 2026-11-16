@@ -68,3 +68,17 @@ def test_entry_on_or_before_public_date_is_rejected(lag_days):
     px = pd.DataFrame([{"security_id": "A", "date": x, "open": 1.0, "close": 1.0} for x in d])
     with pytest.raises(LookAheadError):
         run(sig, px, d, EngineConfig())
+
+
+@pytest.mark.parametrize("seed", range(10))
+def test_monthly_drift_scrambling_future_prices_never_changes_the_past(seed):
+    days, px, sig = random_world(seed, n_days=90)
+    cfg = EngineConfig(hold_trading_days=7, cost_bps_per_side=10.0, rebalance="monthly_drift")
+    base = run(sig, px, days, cfg).daily
+    cut = days[45]
+    future = px["date"] > cut
+    shuffled = px.copy()
+    rng = np.random.default_rng(seed)
+    shuffled.loc[future, "close"] = shuffled.loc[future, "close"] * rng.uniform(0.5, 1.5, future.sum())
+    after = run(sig, shuffled, days, cfg).daily
+    pd.testing.assert_frame_equal(base[base["date"] <= cut], after[after["date"] <= cut])

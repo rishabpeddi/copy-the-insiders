@@ -42,6 +42,7 @@ FROM with_sh;
 
 CREATE OR REPLACE TABLE signals_insider AS
 SELECT a.txn_id AS signal_id, 'buy' AS side, a.security_id, c.filer_id, a.public_date, a.entry_date,
+       a.trade_date, c.filing_lag_days, c.is_10b5_1, c.footnote_mentions_10b5_1, c.aff_10b5_1_flag,
        a.ticker, a.issuer_name, c.value_point, a.mcap_usd, a.match_confidence
 FROM signals_insider_all a
 JOIN signals_insider_candidates c USING (txn_id)

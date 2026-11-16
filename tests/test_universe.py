@@ -30,6 +30,7 @@ def wh(tmp_path):
     sr["entry_date"] = DAYS[sr["ei"]]
     sr["issuer_cik"] = sr["security_id"].str.replace("cik:", "")
     sr["matched"] = True
+    sr["trade_date"] = DAYS[19]
     sr["match_confidence"] = "high"
     sr["issuer_name"] = sr["ticker"]
     sr = sr.drop(columns=["pi", "ei"])
@@ -41,7 +42,8 @@ def wh(tmp_path):
             c = 50.0 if (t == "FFF" and i >= 21) else close
             px_rows.append({"ticker": t, "date": d, "close_nominal": c})
     prices = pd.DataFrame(px_rows)
-    cands = sr[["txn_id"]].assign(filer_id="F1", value_point=50_000.0)
+    cands = sr[["txn_id"]].assign(filer_id="F1", value_point=50_000.0, filing_lag_days=1, is_10b5_1=False,
+                                  footnote_mentions_10b5_1=False, aff_10b5_1_flag=False)
     shares = pd.DataFrame([
         ("0000000001", DAYS[0], 100e6, "cover"),    # $20 x 100M = $2B
         ("0000000002", DAYS[0], 500e6, "cover"),
