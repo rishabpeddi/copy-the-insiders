@@ -81,7 +81,8 @@ def prereg_tag() -> None:
 
 @app.command("run")
 def run_cmd(period: str = typer.Option("dev", help="dev | test"),
-            final: bool = False, rerun: bool = False, reason: str = "") -> None:
+            final: bool = False, rerun: bool = False, reason: str = "",
+            group: str = typer.Option("insider", help="insider | congress")) -> None:
     """Backtest a period. Test-period runs require the tagged config and --final."""
     from cti.lock import assert_unlocked_for
 
@@ -103,10 +104,10 @@ def run_cmd(period: str = typer.Option("dev", help="dev | test"),
     for cost in sens["costs"]:
         for hold in sens["hold_trading_days"]:
             name = cost if hold == base_hold else f"{cost}_hold{hold}"
-            m = run_period(cfg, period, scenario=name, cost=cost, hold=hold)["metrics"]
+            m = run_period(cfg, period, scenario=name, cost=cost, hold=hold, group=group)["metrics"]
             typer.echo(f"{name:16} CAGR {m['cagr']:7.2%}  SPY {m['spy_cagr']:7.2%}  "
                        f"active {m['active_return_ann']:+.2%} [{m['active_ci_low']:+.2%}, {m['active_ci_high']:+.2%}]")
-    typer.echo(f"report: {write_dev_report(cfg)}")
+    typer.echo(f"report: {write_dev_report(cfg, group=group)}")
 
 
 @ingest_app.command("shares")
@@ -127,16 +128,42 @@ def signals() -> None:
     from cti.build import build_marts
     from cti.config import DATA_DIR
 
-    build_marts(load_config())
+    built = build_marts(load_config())
     con = duckdb.connect(str(DATA_DIR / "warehouse.duckdb"), read_only=True)
     try:
-        for r, n in con.execute("SELECT coalesce(universe_reason, 'PASS'), count(*) FROM signals_insider_all "
-                                "GROUP BY 1 ORDER BY 2 DESC").fetchall():
-            typer.echo(f"  {r}: {n:,}")
-        typer.echo(f"buy signals: {con.execute('SELECT count(*) FROM signals_insider').fetchone()[0]:,}; "
-                   f"sell signals: {con.execute('SELECT count(*) FROM signals_insider_sells').fetchone()[0]:,}")
+        for g in ("insider", "congress"):
+            if not any(b.endswith(g) for b in built):
+                continue
+            typer.echo(f"{g}:")
+            for r, n in con.execute(f"SELECT coalesce(universe_reason, 'PASS'), count(*) FROM signals_{g}_all "
+                                    "GROUP BY 1 ORDER BY 2 DESC").fetchall():
+                typer.echo(f"  {r}: {n:,}")
+            typer.echo(f"  buy signals: {con.execute(f'SELECT count(*) FROM signals_{g}').fetchone()[0]:,}; "
+                       f"sell signals: {con.execute(f'SELECT count(*) FROM signals_{g}_sells').fetchone()[0]:,}")
     finally:
         con.close()
+
+
+@ingest_app.command("congress")
+def ingest_congress(start: int = 2015, end: int = 2026) -> None:
+    """House PTR index + electronic PDFs (House Clerk), then parse to staging."""
+    from cti.ingest import congress_house
+
+    congress_house.ingest(start, end, log=lambda m: typer.echo(m))
+    congress_house.stage(log=lambda m: typer.echo(m))
+
+
+@app.command("resolve-congress")
+def resolve_congress(fetch_prices: bool = typer.Option(True, help="Fetch prices for newly mapped tickers")) -> None:
+    """Match House transactions to securities; writes congress_resolution and data_quality_congress.md."""
+    from cti import congress_pipeline as cp
+
+    cfg = load_config()
+    if fetch_prices:
+        typer.echo(f"fetched {cp.ingest_prices(cfg, log=lambda m: typer.echo(m))} new tickers")
+    s = cp.run_resolution(cfg)
+    typer.echo(f"matched {s['matched']:,} / {s['in_scope']:,} in-scope ({s['matched'] / max(s['in_scope'], 1):.1%})")
+    typer.echo("report: reports/data_quality_congress.md")
 
 
 @app.command("all")
@@ -151,7 +178,7 @@ def all_cmd(start: str = "2014Q1", end: str = "2026Q3", skip_ingest: bool = Fals
         ingest_shares()
     resolve()
     signals()
-    run_cmd("dev", False, False, "")
+    run_cmd("dev", False, False, "", "insider")
     raise typer.Exit(subprocess.call([sys.executable, "-m", "pytest", "-q"], cwd=REPO_ROOT))
 
 

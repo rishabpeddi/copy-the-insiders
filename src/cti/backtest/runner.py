@@ -24,19 +24,28 @@ def _period_bounds(cfg: Config, period: str) -> tuple[pd.Timestamp, pd.Timestamp
     return pd.Timestamp(start), pd.Timestamp(end) if end else pd.Timestamp.today().normalize()
 
 
-def load_inputs(cfg: Config, period: str, data_dir: Path = DATA_DIR) -> dict:
+GROUPS = {"insider": ("signals_insider", "signals_insider_sells"),
+          "congress": ("signals_congress", "signals_congress_sells")}
+
+
+def load_inputs(cfg: Config, period: str, data_dir: Path = DATA_DIR, group: str = "insider") -> dict:
+    buys_t, sells_t = GROUPS[group]
     lo, hi = _period_bounds(cfg, period)
     con = duckdb.connect(str(data_dir / "warehouse.duckdb"), read_only=True)
     try:
         q = lambda sql: con.execute(sql, [lo, hi]).df()  # noqa: E731
-        cal = q("SELECT date FROM calendar WHERE date BETWEEN ? AND ? ORDER BY date")["date"]
         buys = q("SELECT signal_id, side, security_id, filer_id, public_date, entry_date "
-                 "FROM signals_insider WHERE entry_date BETWEEN ? AND ?")
+                 f"FROM {buys_t} WHERE entry_date BETWEEN ? AND ?")
+        # A group whose data starts after the period start (House PTRs: 2015) is evaluated from its
+        # first signal, not padded with a year of T-bills.
+        if len(buys):
+            lo = max(lo, pd.Timestamp(buys["entry_date"].min()))
+        cal = q("SELECT date FROM calendar WHERE date BETWEEN ? AND ? ORDER BY date")["date"]
         sells = q("SELECT signal_id, side, security_id, filer_id, public_date, entry_date "
-                  "FROM signals_insider_sells WHERE entry_date BETWEEN ? AND ?")
+                  f"FROM {sells_t} WHERE entry_date BETWEEN ? AND ?")
         prices = q("SELECT security_id, date, adj_open AS open, adj_close AS close, delist_return "
                    "FROM prices_daily WHERE date BETWEEN ? AND ? "
-                   "AND security_id IN (SELECT DISTINCT security_id FROM signals_insider)")
+                   f"AND security_id IN (SELECT DISTINCT security_id FROM {buys_t})")
         ref = q("SELECT date, series, total_return FROM reference_returns "
                 "WHERE date BETWEEN ? AND ? AND series IN ('SPY', 'TBILL')")
     finally:
@@ -50,7 +59,7 @@ def load_inputs(cfg: Config, period: str, data_dir: Path = DATA_DIR) -> dict:
     prices.loc[ends_inside, "delist_return"] = 0.0
     return {"calendar": list(cal), "signals": pd.concat([buys, sells], ignore_index=True),
             "prices": prices, "spy": ref["SPY"].fillna(0.0), "tbill": ref["TBILL"].fillna(0.0),
-            "n_delisted_last_price": int(ends_inside.sum())}
+            "n_delisted_last_price": int(ends_inside.sum()), "start": pd.Timestamp(cal.iloc[0]).date()}
 
 
 def metrics(res: EngineResult, spy: pd.Series, tbill: pd.Series, cfg: Config, test_years: float) -> dict:
@@ -92,18 +101,20 @@ def metrics(res: EngineResult, spy: pd.Series, tbill: pd.Series, cfg: Config, te
 
 
 def run_period(cfg: Config, period: str, scenario: str = "base", cost: str = "base",
-               hold: int | None = None, data_dir: Path = DATA_DIR, reports_dir: Path = REPORTS_DIR) -> dict:
-    inp = load_inputs(cfg, period, data_dir)
+               hold: int | None = None, data_dir: Path = DATA_DIR, reports_dir: Path = REPORTS_DIR,
+               group: str = "insider") -> dict:
+    inp = load_inputs(cfg, period, data_dir, group)
     ecfg = EngineConfig.from_prereg(cfg, cost_scenario=cost, hold_trading_days=hold)
     res = run(inp["signals"], inp["prices"], inp["calendar"], ecfg, cash_returns=inp["tbill"])
     t0, t1 = _period_bounds(cfg, "test")
     test_years = (t1 - t0).days / 365.25
     m = metrics(res, inp["spy"], inp["tbill"], cfg, test_years)
-    m.update({"period": period, "scenario": scenario, "engine": asdict(ecfg), "prereg_sha256": cfg.sha256,
+    m.update({"group": group, "start": str(inp["start"]), "period": period, "scenario": scenario,
+              "engine": asdict(ecfg), "prereg_sha256": cfg.sha256,
               "n_buy_signals": int((inp["signals"]["side"] == "buy").sum()),
               "n_delisted_last_price": inp["n_delisted_last_price"]})
 
-    out = reports_dir / f"{period}_results" / f"insider_{scenario}"
+    out = reports_dir / f"{period}_results" / f"{group}_{scenario}"
     out.mkdir(parents=True, exist_ok=True)
     res.daily.assign(spy_nav=(1 + inp["spy"].reindex(pd.DatetimeIndex(res.daily["date"])).fillna(0)).cumprod()
                      .to_numpy()).to_parquet(out / "daily.parquet", index=False)

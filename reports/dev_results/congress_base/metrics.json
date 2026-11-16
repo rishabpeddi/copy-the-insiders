@@ -1,0 +1,43 @@
+{
+  "years": 6.99,
+  "cagr": 0.039277652853363376,
+  "spy_cagr": 0.14854495286181724,
+  "ann_vol": 0.09721314766536603,
+  "sharpe": 0.3600669699715829,
+  "max_drawdown": -0.19516218509940497,
+  "beta_vs_spy": 0.2696244786662048,
+  "jensen_alpha_ann": -0.004355573158535428,
+  "active_return_ann": -0.11097317848057087,
+  "active_ci_low": -0.19991540694785423,
+  "active_ci_high": -0.03499570089854107,
+  "tracking_error_ann": 0.15441365916855268,
+  "information_ratio": -0.7186746242405688,
+  "mda_test_period": 0.2040940640531585,
+  "test_years": 4.49,
+  "avg_positions": 45.059591373439275,
+  "max_positions": 156,
+  "days_in_cash_only": 888,
+  "turnover_per_year": 4.937220022185973,
+  "costs_per_year": 0.0049372200221859735,
+  "n_positions_opened": 781,
+  "exit_reasons": {
+    "hold_limit": 497,
+    "filer_sale": 284
+  },
+  "median_position_return": 0.028170448780904023,
+  "skipped_signals": 0,
+  "group": "congress",
+  "start": "2015-01-05",
+  "period": "dev",
+  "scenario": "base",
+  "engine": {
+    "hold_trading_days": 126,
+    "early_exit_on_filer_sale": true,
+    "cost_bps_per_side": 10.0,
+    "starting_nav": 1.0,
+    "no_price_delist_return": -1.0
+  },
+  "prereg_sha256": "013a7675bdfc1ffeb304925d041d87f1e54b2058f12dd2eccd51a323dc5f84c9",
+  "n_buy_signals": 1812,
+  "n_delisted_last_price": 0
+}

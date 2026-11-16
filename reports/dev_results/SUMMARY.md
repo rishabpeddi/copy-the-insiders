@@ -1,17 +1,17 @@
 # Dev-period results: insider purchases (generated)
 
-Generated 2026-11-15 19:06. Period: dev (8.0 years). Prices: yfinance
-(survivors only; see `reports/data_quality.md`). prereg sha256 `29c7463aad29` (not tagged).
+Generated 2026-11-15 19:26. Period: dev, from 2014-01-03 (7.99 years). Prices: yfinance
+(survivors only; see `reports/data_quality.md`). prereg sha256 `013a7675bdfc` (not tagged).
 
 **This is the development period. Rules were not changed to improve these numbers, and they say
 nothing yet about the test period.**
 
 | scenario | CAGR | SPY CAGR | active return (95% block-bootstrap CI) | Jensen alpha | tracking error | turnover | costs/yr |
 |---|---:|---:|---|---:|---:|---:|---:|
-| base | 14.41% | 14.66% | +0.87% [-5.56%, +9.75%] | -1.02% | 11.8% | 8.9x | 0.89% |
-| base_hold63 | 14.11% | 14.66% | +0.64% [-5.77%, +9.30%] | -1.28% | 12.1% | 13.7x | 1.37% |
-| stress | 12.85% | 14.66% | -0.51% [-6.82%, +8.49%] | -2.39% | 11.8% | 8.9x | 2.24% |
-| stress_hold63 | 11.75% | 14.66% | -1.44% [-7.75%, +7.34%] | -3.37% | 12.1% | 13.8x | 3.44% |
+| base | 14.41% | 14.81% | +0.75% [-5.53%, +9.80%] | -1.16% | 11.8% | 8.9x | 0.89% |
+| base_hold63 | 14.12% | 14.81% | +0.52% [-5.75%, +9.29%] | -1.43% | 12.1% | 13.7x | 1.37% |
+| stress | 12.85% | 14.81% | -0.63% [-6.78%, +8.52%] | -2.54% | 11.8% | 8.9x | 2.24% |
+| stress_hold63 | 11.76% | 14.81% | -1.56% [-7.70%, +7.33%] | -3.52% | 12.1% | 13.8x | 3.44% |
 
 Active return = mean daily (strategy - SPY) x 252. Jensen alpha adjusts for beta
 (1.13 in base) and the T-bill rate. CIs are not yet Holm-adjusted.

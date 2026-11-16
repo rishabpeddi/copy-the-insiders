@@ -49,6 +49,7 @@ resolution:
   price_check_tight_pct: 0.25    # within +/-25%: medium/high confidence
   price_check_max_ratio: 2.0     # beyond 2x either way: unmatched (price_mismatch)
   min_price_history_days: 20     # yfinance returns 1-day stubs for delisted tickers; those don't count as priced
+  congress_max_ticker_gap_days: 365  # Congress ticker -> CIK via Form 4 history only if the issuer used it within a year
   audit_sample_size: 100
   audit_seed: 20260101
 

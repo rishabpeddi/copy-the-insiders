@@ -8,11 +8,13 @@ from pathlib import Path
 
 from cti.config import REPORTS_DIR, Config
 
+TITLES = {"insider": "insider purchases", "congress": "House member purchases"}
 
-def write_dev_report(cfg: Config, reports_dir: Path = REPORTS_DIR) -> Path:
+
+def write_dev_report(cfg: Config, reports_dir: Path = REPORTS_DIR, group: str = "insider") -> Path:
     root = reports_dir / "dev_results"
-    ms = {p.parent.name.removeprefix("insider_"): json.loads(p.read_text())
-          for p in sorted(root.glob("insider_*/metrics.json"))}
+    ms = {p.parent.name.removeprefix(f"{group}_"): json.loads(p.read_text())
+          for p in sorted(root.glob(f"{group}_*/metrics.json"))}
     if not ms:
         raise FileNotFoundError("No dev results. Run `cti run --period dev`.")
     base = ms.get("base") or next(iter(ms.values()))
@@ -24,9 +26,9 @@ def write_dev_report(cfg: Config, reports_dir: Path = REPORTS_DIR) -> Path:
         f"{m['tracking_error_ann']:.1%} | {m['turnover_per_year']:.1f}x | {m['costs_per_year']:.2%} |"
         for k, m in ms.items())
     ex = base["exit_reasons"]
-    md = f"""# Dev-period results: insider purchases (generated)
+    md = f"""# Dev-period results: {TITLES[group]} (generated)
 
-Generated {dt.datetime.now():%Y-%m-%d %H:%M}. Period: dev ({base['years']} years). Prices: {cfg['data']['price_source']}
+Generated {dt.datetime.now():%Y-%m-%d %H:%M}. Period: dev, from {base.get('start', '?')} ({base['years']} years). Prices: {cfg['data']['price_source']}
 (survivors only; see `reports/data_quality.md`). prereg sha256 `{base['prereg_sha256'][:12]}` (not tagged).
 
 **This is the development period. Rules were not changed to improve these numbers, and they say
@@ -55,6 +57,6 @@ test period, the **minimum detectable alpha at 80% power is {base['mda_test_peri
 (two-sided, alpha = {cfg['inference']['alpha']}). Any true alpha much smaller than that will most
 likely come out "inconclusive". Record this in PREREG.md before tagging.
 """
-    out = root / "SUMMARY.md"
+    out = root / ("SUMMARY.md" if group == "insider" else f"SUMMARY_{group}.md")
     out.write_text(md, encoding="utf-8")
     return out

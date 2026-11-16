@@ -68,5 +68,15 @@ def build(cfg: Config, data_dir: Path = DATA_DIR, models: list[str] | None = Non
     return _run(files, cfg, data_dir)
 
 
+# Mart -> the input table it needs; marts whose input doesn't exist yet are skipped.
+MART_REQUIRES = {"40_signals_insider": "signal_resolution", "41_signals_congress": "congress_resolution"}
+
+
 def build_marts(cfg: Config, data_dir: Path = DATA_DIR) -> list[str]:
-    return _run(sorted(MARTS_DIR.glob("*.sql")), cfg, data_dir)
+    con = duckdb.connect(str(data_dir / "warehouse.duckdb"), read_only=True)
+    try:
+        tables = {r[0] for r in con.execute("SELECT table_name FROM information_schema.tables").fetchall()}
+    finally:
+        con.close()
+    files = [f for f in sorted(MARTS_DIR.glob("*.sql")) if MART_REQUIRES.get(f.stem, "") in tables | {""}]
+    return _run(files, cfg, data_dir)
