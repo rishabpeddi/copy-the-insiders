@@ -28,6 +28,7 @@ import math
 from collections import defaultdict
 from dataclasses import dataclass, field
 
+import numpy as np
 import pandas as pd
 
 from cti.backtest.costs import cost_rate
@@ -65,6 +66,7 @@ class _Position:
     entry_date: dt.date
     value: float = 0.0
     last_close: float | None = None
+    growth: float = 1.0  # product of price relatives while held (the stock's own return)
     filers: set = field(default_factory=set)
     signal_ids: list = field(default_factory=list)
 
@@ -114,15 +116,33 @@ def run(signals: pd.DataFrame, prices: pd.DataFrame, calendar, cfg: EngineConfig
         raise ValueError("empty calendar")
     rate = cost_rate(cfg.cost_bps_per_side)
 
-    # Lookups. The loop only ever reads px[(sec, today)], so it cannot see future prices.
-    px: dict[tuple, tuple[float, float, float]] = {}
-    has_dr = "delist_return" in prices.columns
-    p = prices.assign(date=_to_date(prices["date"]))
-    for row in p.itertuples(index=False):
-        dr = row.delist_return if has_dr else math.nan
-        px[(row.security_id, row.date)] = (float(row.open), float(row.close),
-                                           float(dr) if dr is not None else math.nan)
-    last_price_date = p.groupby("security_id")["date"].max().to_dict()
+    # Lookups: day x security arrays (NaN = no quote). The loop only ever reads row i (today),
+    # so it cannot see future prices. Only securities with a buy signal are needed.
+    n_days = len(days)
+    day_idx = {d: i for i, d in enumerate(days)}
+    secs = sorted(set(sig.loc[sig["side"] == "buy", "security_id"]))
+    sec_idx = {s: j for j, s in enumerate(secs)}
+    opens = np.full((n_days, len(secs)), np.nan)
+    C = np.full_like(opens, np.nan)
+    D = np.full_like(opens, np.nan)
+    p = prices[prices["security_id"].isin(sec_idx)]
+    pi = _to_date(p["date"]).map(day_idx)
+    keep = pi.notna().to_numpy()
+    rows = pi[keep].astype(int).to_numpy()
+    cols = p["security_id"][keep].map(sec_idx).to_numpy()
+    opens[rows, cols] = p["open"].to_numpy(dtype=float)[keep]
+    C[rows, cols] = p["close"].to_numpy(dtype=float)[keep]
+    if "delist_return" in p.columns:
+        D[rows, cols] = pd.to_numeric(p["delist_return"], errors="coerce").to_numpy(dtype=float)[keep]
+    has_q = ~np.isnan(opens) & ~np.isnan(C)
+    last_idx = np.where(has_q.any(axis=0), n_days - 1 - np.argmax(has_q[::-1], axis=0), -1)
+
+    def quote(sec: str, i: int):
+        j = sec_idx.get(sec)
+        if j is None or not has_q[i, j]:
+            return None
+        return opens[i, j], C[i, j], D[i, j], j
+
     cash_ret = {} if cash_returns is None else {
         pd.Timestamp(k).date(): float(v) for k, v in cash_returns.items()}
 
@@ -142,14 +162,16 @@ def run(signals: pd.DataFrame, prices: pd.DataFrame, calendar, cfg: EngineConfig
             "position_id": pos.position_id, "security_id": pos.security_id,
             "entry_date": pos.entry_date, "exit_date": date, "exit_reason": reason,
             "source_signal_ids": list(pos.signal_ids), "exit_value": pos.value,
+            "gross_return": pos.growth - 1.0,
         })
 
     for i, today in enumerate(days):
         # 1. Yesterday's close -> today's open.
         for pos in held.values():
-            q = px.get((pos.security_id, today))
+            q = quote(pos.security_id, i)
             if q and pos.last_close:
                 pos.value *= q[0] / pos.last_close
+                pos.growth *= q[0] / pos.last_close
 
         # 2. Exits at the open.
         sold_value = 0.0
@@ -176,7 +198,7 @@ def run(signals: pd.DataFrame, prices: pd.DataFrame, calendar, cfg: EngineConfig
                 pos.filers.add(b.filer_id)
                 pos.signal_ids.append(b.signal_id)
                 continue
-            if (b.security_id, today) not in px:
+            if quote(b.security_id, i) is None:
                 skipped.append({"signal_id": b.signal_id, "date": today, "reason": "no_price_on_entry"})
                 continue
             held[b.security_id] = _Position(next_id, b.security_id, i, today,
@@ -205,17 +227,19 @@ def run(signals: pd.DataFrame, prices: pd.DataFrame, calendar, cfg: EngineConfig
         # 5. Open -> close, then delistings.
         for sec in list(held):
             pos = held[sec]
-            q = px.get((sec, today))
+            q = quote(sec, i)
             if q is None:
                 continue
-            o, c, dr = q
+            o, c, dr, j = q
             if o > 0:
                 pos.value *= c / o
+                pos.growth *= c / o
             pos.last_close = c
-            ends_early = today == last_price_date.get(sec) and today < days[-1]
+            ends_early = i == last_idx[j] and i < n_days - 1
             if not math.isnan(dr) or ends_early:
                 r = dr if not math.isnan(dr) else cfg.no_price_delist_return
                 pos.value *= 1.0 + r
+                pos.growth *= 1.0 + r
                 held.pop(sec)
                 cash += pos.value
                 close_out(pos, today, "delist")
@@ -232,11 +256,12 @@ def run(signals: pd.DataFrame, prices: pd.DataFrame, calendar, cfg: EngineConfig
             "position_id": pos.position_id, "security_id": pos.security_id,
             "entry_date": pos.entry_date, "exit_date": None, "exit_reason": "open",
             "source_signal_ids": list(pos.signal_ids), "exit_value": pos.value,
+            "gross_return": pos.growth - 1.0,
         })
 
     positions = pd.DataFrame(closed_rows, columns=[
         "position_id", "security_id", "entry_date", "exit_date", "exit_reason",
-        "source_signal_ids", "exit_value"]).sort_values("position_id", ignore_index=True)
+        "source_signal_ids", "exit_value", "gross_return"]).sort_values("position_id", ignore_index=True)
     return EngineResult(
         daily=pd.DataFrame(daily_rows),
         positions=positions,

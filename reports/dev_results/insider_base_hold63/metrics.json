@@ -1,0 +1,42 @@
+{
+  "years": 8.0,
+  "cagr": 0.14108542471543162,
+  "spy_cagr": 0.1466408057237989,
+  "ann_vol": 0.2263559142935658,
+  "sharpe": 0.6652085648074821,
+  "max_drawdown": -0.45413858518261874,
+  "beta_vs_spy": 1.1338533267031965,
+  "jensen_alpha_ann": -0.01284804471924404,
+  "active_return_ann": 0.006444194840464289,
+  "active_ci_low": -0.05769384570134393,
+  "active_ci_high": 0.09299731035001269,
+  "tracking_error_ann": 0.12088095558134063,
+  "information_ratio": 0.05331025726486749,
+  "mda_test_period": 0.15977268866023714,
+  "test_years": 4.49,
+  "avg_positions": 229.29727047146403,
+  "max_positions": 582,
+  "days_in_cash_only": 1,
+  "turnover_per_year": 13.740865689623623,
+  "costs_per_year": 0.013740865689623624,
+  "n_positions_opened": 7619,
+  "exit_reasons": {
+    "hold_limit": 7146,
+    "open": 363,
+    "filer_sale": 110
+  },
+  "median_position_return": 0.036433344720124605,
+  "skipped_signals": 0,
+  "period": "dev",
+  "scenario": "base_hold63",
+  "engine": {
+    "hold_trading_days": 63,
+    "early_exit_on_filer_sale": true,
+    "cost_bps_per_side": 10.0,
+    "starting_nav": 1.0,
+    "no_price_delist_return": -1.0
+  },
+  "prereg_sha256": "29c7463aad298caa29d0991f3c3f9292bb12962c4861aeef914cc6bedc240f03",
+  "n_buy_signals": 30237,
+  "n_delisted_last_price": 0
+}

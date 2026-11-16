@@ -107,3 +107,13 @@ def test_entry_without_price_is_skipped_and_logged():
     r = run(signals(signal("s1", "buy", "A", "F", 1, 3)), px, cal(3), NO_COST)
     assert r.skipped_signals.loc[0, "reason"] == "no_price_on_entry"
     assert navs(r) == [1.0, 1.0, 1.0]
+
+
+def test_gross_return_is_the_stocks_own_return_while_held():
+    # A enters d1 at open 10, exits d3 at open 12 -> +20% regardless of portfolio weights.
+    px = prices([("A", 1, 10, 11), ("A", 2, 11, 12), ("A", 3, 12, 15), ("A", 4, 15, 15),
+                 ("B", 1, 5, 5), ("B", 2, 5, 5), ("B", 3, 5, 5), ("B", 4, 5, 5)])
+    sig = signals(signal("s1", "buy", "A", "F", 1, 5), signal("s2", "buy", "B", "G", 2, 5))
+    r = run(sig, px, cal(5), NO_COST)
+    a = r.positions.set_index("security_id").loc["A"]
+    assert a["gross_return"] == pytest.approx(0.2)

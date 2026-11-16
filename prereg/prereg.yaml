@@ -9,9 +9,14 @@ periods:
   forward: {start: 2026-07-01}
 
 universe:
-  min_price: 5
-  min_mcap_usd: 300_000_000
+  min_price: 5                   # nominal close on the last trading day before entry
+  min_mcap_usd: 300_000_000      # SEC cover-page shares x that close
   us_listed_common: true
+  exchanges: [NYSE, Nasdaq, CBOE, TXSE]   # SEC ticker map (current listing); OTC and unknown excluded
+  shares_lag_days: 14            # a cover-page share count is usable 14 days after its date
+  shares_fallback_lag_days: 90   # weighted-average basic shares (10-Q/10-K), for multi-class filers
+  shares_max_age_days: 400       # older share counts count as unknown
+  mcap_unknown: exclude
 
 groups:
   insider:

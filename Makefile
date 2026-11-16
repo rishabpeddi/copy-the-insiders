@@ -16,7 +16,10 @@ build:
 	uv run cti build
 	uv run cti ingest reference
 	uv run cti ingest prices
+	uv run cti ingest shares
 	uv run cti resolve
+	uv run cti signals
+	uv run cti run --period dev
 
 test:
 	uv run pytest -q

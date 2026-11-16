@@ -89,22 +89,69 @@ def run_cmd(period: str = typer.Option("dev", help="dev | test"),
     if period not in {"dev", "test"}:
         raise typer.BadParameter("period must be dev or test")
     assert_unlocked_for(period, cfg)
-    if period == "test" and not final:
-        raise typer.BadParameter("Test-period runs are one-time: pass --final.")
-    typer.echo("Backtest wiring lands in Phase 4 (needs prices + security resolution from Phase 2).")
-    raise typer.Exit(code=1)
+    if period == "test":
+        if not final:
+            raise typer.BadParameter("Test-period runs are one-time: pass --final.")
+        typer.echo("The --final test run (Holm adjustment + decision rule) is Phase 6 and not wired yet.")
+        raise typer.Exit(code=1)
+
+    from cti.backtest.report import write_dev_report
+    from cti.backtest.runner import run_period
+
+    sens = cfg["sensitivity"]
+    base_hold = int(cfg.portfolio["hold_trading_days"])
+    for cost in sens["costs"]:
+        for hold in sens["hold_trading_days"]:
+            name = cost if hold == base_hold else f"{cost}_hold{hold}"
+            m = run_period(cfg, period, scenario=name, cost=cost, hold=hold)["metrics"]
+            typer.echo(f"{name:16} CAGR {m['cagr']:7.2%}  SPY {m['spy_cagr']:7.2%}  "
+                       f"active {m['active_return_ann']:+.2%} [{m['active_ci_low']:+.2%}, {m['active_ci_high']:+.2%}]")
+    typer.echo(f"report: {write_dev_report(cfg)}")
+
+
+@ingest_app.command("shares")
+def ingest_shares() -> None:
+    """Point-in-time shares outstanding (SEC XBRL frames) for the market-cap filter."""
+    from cti.ingest import sec_shares
+
+    sec_shares.fetch(int(str(load_config()["data"]["price_history_start"])[:4]),
+                     log=lambda m: None if "none yet" in m else typer.echo(m))
+    typer.echo(f"staged {len(sec_shares.stage()):,} share counts")
+
+
+@app.command()
+def signals() -> None:
+    """Universe filter + buy/sell signals (SQL marts). Run after `cti resolve`."""
+    import duckdb
+
+    from cti.build import build_marts
+    from cti.config import DATA_DIR
+
+    build_marts(load_config())
+    con = duckdb.connect(str(DATA_DIR / "warehouse.duckdb"), read_only=True)
+    try:
+        for r, n in con.execute("SELECT coalesce(universe_reason, 'PASS'), count(*) FROM signals_insider_all "
+                                "GROUP BY 1 ORDER BY 2 DESC").fetchall():
+            typer.echo(f"  {r}: {n:,}")
+        typer.echo(f"buy signals: {con.execute('SELECT count(*) FROM signals_insider').fetchone()[0]:,}; "
+                   f"sell signals: {con.execute('SELECT count(*) FROM signals_insider_sells').fetchone()[0]:,}")
+    finally:
+        con.close()
 
 
 @app.command("all")
 def all_cmd(start: str = "2014Q1", end: str = "2026Q3", skip_ingest: bool = False) -> None:
-    """Ingest, build, test. Same as `make all`."""
+    """Ingest, build, resolve, signals, dev backtest, tests. Same as `make all`."""
     if not skip_ingest:
         ingest_form4(start, end)
     build(None)
     if not skip_ingest:
         ingest_reference()
         ingest_prices(False)
+        ingest_shares()
     resolve()
+    signals()
+    run_cmd("dev", False, False, "")
     raise typer.Exit(subprocess.call([sys.executable, "-m", "pytest", "-q"], cwd=REPO_ROOT))
 
 

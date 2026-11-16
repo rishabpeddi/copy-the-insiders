@@ -44,3 +44,4 @@ ignore = ["B008"]  # typer.Option in defaults is the documented Typer idiom
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E501"]  # inline TSV fixtures
+"src/cti/backtest/report.py" = ["E501"]  # markdown table template

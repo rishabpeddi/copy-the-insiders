@@ -3,7 +3,8 @@
 **Question.** If you had copied every open-market purchase by corporate insiders, or by members
 of Congress, the day after it became public, would you have beaten the market after costs?
 
-**Answer.** Not yet known. The rules are pre-registered in [`prereg/prereg.yaml`](prereg/prereg.yaml)
+**Answer.** Not yet known. On the dev period (2014–2021) the insider strategy roughly matched SPY
+(14.4% vs 14.7% a year), but the test period can only detect alphas above ~16% a year. The rules are pre-registered in [`prereg/prereg.yaml`](prereg/prereg.yaml)
 and the test period is code-locked until that file is tagged.
 
 ## Run it
@@ -27,7 +28,9 @@ uv run cti all
 | `cti resolve` | Match candidates to securities; writes `calendar`, `securities`, `signal_resolution`, `prices_daily`, `reference_returns` and `reports/data_quality.md` |
 | `cti prereg hash` | Print the config hash |
 | `cti prereg tag` | Commit and tag the pre-registration (`prereg-v1`); then `git push --tags` |
-| `cti run --period dev` | Dev-period backtest (Phase 4) |
+| `cti ingest shares` | Point-in-time shares outstanding (SEC XBRL frames) for the market-cap filter |
+| `cti signals` | Universe filter + buy/sell signals (`signals_insider`, `signals_insider_sells`) |
+| `cti run --period dev` | Dev-period backtest, all pre-registered sensitivity scenarios; writes `reports/dev_results/SUMMARY.md` |
 | `cti run --period test --final` | The one-time test run; refuses unless the config matches the tag |
 
 ## Status
@@ -37,7 +40,8 @@ uv run cti all
       CIK/ticker resolution with confidence + price check, `reports/data_quality.md`
 - [x] Phase 3: backtest engine with hand-calculated fixture tests and a look-ahead test
 - [ ] Phase 2 follow-up: hand-audit `reports/audit/match_audit_sample.csv`; full 2014–2026 ingest
-- [ ] Phases 4–7
+- [x] Phase 4: insider strategy on the dev period (`reports/dev_results/SUMMARY.md`); minimum detectable alpha in PREREG.md
+- [ ] Phases 5–7: Congress data, lock + test run, reporting
 
 ## Limits
 See [`prereg/PREREG.md`](prereg/PREREG.md#known-measurement-issues-record-before-the-test-run).

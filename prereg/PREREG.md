@@ -68,7 +68,24 @@ Found by ingesting 2024Q1 for real (2,015 candidate purchases across 688 issuers
    They currently count as separate signals (same security, so one position). Confirm that's intended.
 
 ## Minimum detectable alpha (fill in after Phase 4/5 dev runs, before tagging)
-| Group | Tracking error (ann.) | MDA at 80% power |
+| Group | Tracking error (ann.) | MDA at 80% power (4.5-year test) |
 |---|---|---|
-| insider | TBD | TBD |
+| insider | 11.8% (dev, base, yfinance) | **15.6% / year** |
 | congress | TBD | TBD |
+
+**What this means.** With an 11.8% tracking error, a 4.5-year test can only reliably detect an
+alpha of about 16% a year. A realistic insider-buying alpha of a few percent a year will almost
+certainly come out *inconclusive*, and the `rules_out` rule (`adj_ci_high < 0.02`) needs a CI
+about ±2% wide, which this test cannot produce. Options to decide **before tagging**:
+1. Accept that "inconclusive" is the likely outcome and say so up front (valid, honest).
+2. Lower tracking error with a closer benchmark: an equal-weight or small/mid-cap index, or the
+   sector clone, instead of SPY as the primary. (Dev: beta 1.13, ~360 mostly small/mid stocks.)
+3. Weight positions by signal strength or cap the number of names. Fewer names usually
+   *raises* tracking error, though, so this rarely helps power.
+4. Lengthen the evaluation by counting the forward period too (from 2026-07-01).
+
+Dev results (not a test of anything): CAGR 14.4% vs SPY 14.7%; active return +0.9%/yr
+[95% CI −5.6%, +9.8%]; beta-adjusted alpha −1.0%/yr; 25 bps costs turn both negative.
+Full table: `reports/dev_results/SUMMARY.md`.
+Turnover is 8.9× a year, about half of it from re-equalizing weights on every entry/exit day
+(nearly every day). That's the pre-registered rule working as written; it costs ~0.9%/yr at 10 bps.
