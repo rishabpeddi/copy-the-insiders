@@ -40,7 +40,7 @@ def write_dev_report(cfg: Config, reports_dir: Path = REPORTS_DIR, group: str = 
     for k in order:
         m = ms[k]
         f = m["signal_filters"]
-        syn = f" + {f['synthetic_unmatched']:,} synthetic" if f.get("synthetic_unmatched") else ""
+        syn = f" + {f['synthetic_unmatched']:,} synthetic positions" if f.get("synthetic_unmatched") else ""
         rows.append(
             f"| {k} | {m['cagr']:.2%} | {m['spy_cagr']:.2%} | {_ci(m, 'ff_alpha_ann', 'ff_ci_low', 'ff_ci_high')} | "
             f"{_ci(m, 'active_return_ann', 'active_ci_low', 'active_ci_high')} | "

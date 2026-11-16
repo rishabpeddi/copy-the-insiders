@@ -81,3 +81,22 @@ def test_filters_apply_prereg_cutoffs():
     c = pd.DataFrame({"filing_lag_days": [10, 120], "match_confidence": ["low", "high"]})
     assert len(_filters(c, cfg, "congress", Scenario())[0]) == 0               # low dropped, >90 days dropped
     assert len(_filters(c, cfg, "congress", Scenario(min_confidence="low", filing_lag="none"))[0]) == 2
+
+
+def test_survivorship_bound_groups_repeat_buys_into_issuer_episodes():
+    from cti.backtest.runner import _synthetic
+    cfg = load_config()
+    cal = list(pd.bdate_range("2020-01-01", periods=300))
+    um = pd.DataFrame({"signal_id": ["a", "b", "c", "d"], "issuer_key": ["X", "X", "X", "Y"],
+                       "filer_id": ["F1", "F2", "F3", "F4"], "entry_date": [cal[10], cal[12], cal[200], cal[10]],
+                       "public_date": [cal[9], cal[11], cal[199], cal[9]], "filing_lag_days": 1,
+                       "is_10b5_1": False, "footnote_mentions_10b5_1": False})
+    inp = {"group": "insider", "calendar": cal, "unmatched": um, "pass_rate": {2020: 1.0},
+           "spy": pd.Series(0.001, index=pd.DatetimeIndex(cal))}
+    sig, px = _synthetic(inp, cfg, Scenario(bound="minus_100"), hold=126)
+    # X: a and b share one episode (within 126 days); c starts a new one. Y is its own episode.
+    assert sig["security_id"].nunique() == 3
+    assert sig.loc[sig["signal_id"] == "synthetic:a", "security_id"].iloc[0] == \
+        sig.loc[sig["signal_id"] == "synthetic:b", "security_id"].iloc[0]
+    first = px[px["security_id"] == sig["security_id"].iloc[0]]
+    assert first["delist_return"].min() == -1.0 and len(first) == 127

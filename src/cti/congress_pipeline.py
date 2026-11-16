@@ -69,9 +69,13 @@ def run_resolution(cfg: Config, data_dir: Path = DATA_DIR, reports_dir: Path = R
     src = cfg["data"]["price_source"]
     con = _con(data_dir)
     try:
-        # Price rows for Congress securities the insider side never priced.
+        # Price rows for Congress securities the insider side never priced. Drop earlier Congress-only
+        # additions first so a re-run never stacks a second ticker's series under the same security.
+        con.execute("DELETE FROM prices_daily WHERE security_id NOT IN "
+                    "(SELECT security_id FROM securities WHERE ticker IS NOT NULL)")
         have = set(con.execute("SELECT DISTINCT security_id FROM prices_daily").df()["security_id"])
         new = res[res["matched"] & ~res["security_id"].isin(have)][["security_id", "ticker"]].drop_duplicates()
+        assert not new["security_id"].duplicated().any(), "one price ticker per security"
         if len(new):
             px = pd.read_parquet(data_dir / "staging" / "prices" / f"{src}.parquet")
             add = px.merge(new, on="ticker")[["security_id", "ticker", "date", "open", "close", "adj_open",
@@ -119,8 +123,8 @@ def write_quality(res: pd.DataFrame, docs: pd.DataFrame, cfg: Config, reports_di
                      f"| {size:,} | {rate} |")
 
     # Who files on paper? If paper filers differ systematically, the parsed sample isn't the population.
-    mem = docs.assign(member=docs["last"].str.upper() + ", " + docs["first"].str.upper() + " (" + docs["state_dst"] + ")",
-                      paper=docs["status"].eq("paper_scan_not_parsed"))
+    member = docs["last"].str.upper() + ", " + docs["first"].str.upper() + " (" + docs["state_dst"] + ")"
+    mem = docs.assign(member=member, paper=docs["status"].eq("paper_scan_not_parsed"))
     per = mem.groupby("member")["paper"].agg(["size", "mean"])
     kinds = {"electronic only": int((per["mean"] == 0).sum()), "paper only": int((per["mean"] == 1).sum()),
              "mixed": int(((per["mean"] > 0) & (per["mean"] < 1)).sum())}
@@ -133,9 +137,12 @@ def write_quality(res: pd.DataFrame, docs: pd.DataFrame, cfg: Config, reports_di
     audit = res[res["matched"]].sample(n=k, random_state=int(cfg["resolution"]["audit_seed"]))
     audit_dir = reports_dir / "audit"
     audit_dir.mkdir(parents=True, exist_ok=True)
-    audit[["txn_id", "doc_id", "last", "first", "asset", "norm_ticker", "ticker", "issuer_name", "match_method",
-           "match_confidence", "trade_date"]].assign(audit_correct="", audit_note="") \
-        .to_csv(audit_dir / "congress_match_audit_sample.csv", index=False)
+    from cti.audit import house_ptr_url, write_sample
+    a = audit[["txn_id", "doc_id", "last", "first", "asset", "norm_ticker", "ticker", "issuer_name", "match_method",
+               "match_confidence", "trade_date", "public_date"]].copy()
+    a.insert(1, "ptr_url", [house_ptr_url(d, pd.Timestamp(p).year)
+                            for d, p in zip(a["doc_id"], a["public_date"], strict=True)])
+    write_sample(a, audit_dir / "congress_match_audit_sample.csv")
 
     nl = "\n"
     md = f"""# Congress data quality (generated): House PTRs

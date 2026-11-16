@@ -27,6 +27,9 @@ _STOP = {"inc", "corp", "corporation", "company", "co", "ltd", "plc", "the", "cl
          "and", "of", "adr", "ads", "depositary", "series", "par", "value", "cl", "com", "stores"}
 
 
+FUND_FAMILY_MAX_TICKERS = 3
+
+
 def name_tokens(s) -> list[str]:
     """'McDonald's Corp' -> ['mcdonalds'], 'Wal-Mart Stores' -> ['walmart'], 'V.F. Corp' -> ['vf']."""
     if not isinstance(s, str):
@@ -70,6 +73,10 @@ def map_to_cik(tx: pd.DataFrame, hist: pd.DataFrame, sec_map: pd.DataFrame, max_
     f4 = m.drop_duplicates("txn_id").set_index("txn_id")[["issuer_cik", "f4_name"]]
 
     sec = sec_map.assign(t=sec_map["ticker"].str.replace(".", "-", regex=False)).drop_duplicates("t")
+    # A CIK listing many tickers is a fund family (e.g. one ProShares trust = dozens of different
+    # ETFs). Its tickers are different securities, so they can't share one CIK-level security.
+    n_tickers = sec.groupby("cik")["t"].transform("size")
+    sec = sec[n_tickers <= FUND_FAMILY_MAX_TICKERS]
     cur = tx[["txn_id", "norm_ticker"]].merge(sec[["t", "cik", "name"]], left_on="norm_ticker", right_on="t",
                                               how="inner").set_index("txn_id")
     out = pd.DataFrame(index=tx["txn_id"])
@@ -96,12 +103,25 @@ def resolve(tx: pd.DataFrame, hist: pd.DataFrame, sec_map: pd.DataFrame, insider
     r = tx.merge(cik, on="txn_id", how="left")
     r["name_match"] = [names_match(a, b) for a, b in zip(r["asset"], r["issuer_name"], strict=True)]
 
-    chosen = insider_secs.dropna(subset=["ticker"]).set_index("cik")["ticker"]
-    r["price_ticker"] = r["cik"].map(chosen).fillna(r["norm_ticker"])
-    r["security_id"] = np.where(r["cik"].notna(), "cik:" + r["cik"].fillna(""), None)
-
     counts = prices["ticker"].value_counts()
     priced = set(counts[counts >= min_history_days].index)
+
+    # ONE price ticker per company, so an ADR and a foreign ordinary share (BCS / BCLYF) or two
+    # share classes never get mixed into one price series: the ticker the insider resolution chose
+    # (follows renames), else the SEC's first-listed priced ticker, else the most-reported priced one.
+    chosen = insider_secs.dropna(subset=["ticker"]).set_index("cik")["ticker"].to_dict()
+    sec_t = sec_map.assign(t=sec_map["ticker"].str.replace(".", "-", regex=False))
+    for cik_, grp in sec_t.groupby("cik", sort=False):
+        if cik_ not in chosen:
+            hit = next((t for t in grp["t"] if t in priced), None)
+            if hit:
+                chosen[cik_] = hit
+    reported = (r.dropna(subset=["cik"])[r["norm_ticker"].isin(priced)]
+                .groupby("cik")["norm_ticker"].agg(lambda x: x.value_counts().index[0]))
+    for cik_, t in reported.items():
+        chosen.setdefault(cik_, t)
+    r["price_ticker"] = r["cik"].map(chosen).fillna(r["norm_ticker"])
+    r["security_id"] = np.where(r["cik"].notna(), "cik:" + r["cik"].fillna(""), None)
     first_px = prices[prices["ticker"].isin(priced)].groupby("ticker")["date"].min()
     r["public_date"] = pd.to_datetime(r["filing_date"])
     r["entry_date"] = next_trading_day_after(r["public_date"], calendar).to_numpy()

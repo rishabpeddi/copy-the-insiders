@@ -138,6 +138,11 @@ def run(signals: pd.DataFrame, prices: pd.DataFrame, calendar, cfg: EngineConfig
     day_idx = {d: i for i, d in enumerate(days)}
     wanted = set(sig.loc[sig["side"] == "buy", "security_id"])
     p = prices[prices["security_id"].isin(wanted)].copy()
+    dup = p.duplicated(["security_id", "date"], keep=False)
+    if dup.any():
+        ex = p.loc[dup, "security_id"].iloc[0]
+        raise ValueError(f"{int(dup.sum())} duplicate (security_id, date) price rows, e.g. {ex}: two price "
+                         "series under one security would make returns meaningless")
     p["i"] = _to_date(p["date"]).map(day_idx)
     p = p.dropna(subset=["i"])
     p["i"] = p["i"].astype(int)

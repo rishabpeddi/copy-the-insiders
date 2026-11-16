@@ -177,3 +177,11 @@ def test_signal_weighting_by_amount():
     sig = pd.DataFrame([_sig("a", "buy", "A", "F", 1, weight=3.0), _sig("b", "buy", "B", "G", 2, weight=1.0)])
     v = run(sig, _px(rows), MD[:3], cfg).positions.set_index("security_id")["exit_value"]
     assert v["A"] == pytest.approx(0.75) and v["B"] == pytest.approx(0.25)
+
+
+def test_duplicate_price_rows_for_one_security_are_refused():
+    # Two tickers' prices under one security (e.g. an ADR and its ordinary share) must never be mixed.
+    px = prices([("A", 1, 10, 10), ("A", 2, 10, 10)])
+    px = pd.concat([px, px.assign(open=2.5, close=2.5)], ignore_index=True)
+    with pytest.raises(ValueError, match="duplicate"):
+        run(signals(signal("s1", "buy", "A", "F", 1, 3)), px, cal(3), NO_COST)

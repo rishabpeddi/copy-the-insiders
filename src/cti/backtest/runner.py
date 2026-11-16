@@ -88,12 +88,14 @@ def load_inputs(cfg: Config, period: str, data_dir: Path = DATA_DIR, group: str 
         pass_rate = q(f"SELECT year(entry_date) AS y, avg((universe_reason IS NULL)::INT) AS rate FROM {all_t} "
                       "WHERE entry_date BETWEEN ? AND ? GROUP BY 1")
         if group == "insider":
-            unmatched = q("SELECT r.txn_id AS signal_id, c.filer_id, r.public_date, r.entry_date, "
+            unmatched = q("SELECT r.txn_id AS signal_id, r.issuer_cik AS issuer_key, c.filer_id, "
+                          "r.public_date, r.entry_date, "
                           "c.filing_lag_days, c.is_10b5_1, c.footnote_mentions_10b5_1 "
                           "FROM signal_resolution r JOIN signals_insider_candidates c USING (txn_id) "
                           f"WHERE r.entry_date BETWEEN ? AND ? AND r.unmatched_reason IN ({reasons})")
         else:
-            unmatched = q("SELECT txn_id AS signal_id, filer_id, public_date, entry_date, "
+            unmatched = q("SELECT txn_id AS signal_id, coalesce(issuer_cik, norm_ticker, asset) AS issuer_key, "
+                          "filer_id, public_date, entry_date, "
                           "date_diff('day', trade_date, public_date) AS filing_lag_days "
                           f"FROM congress_resolution WHERE entry_date BETWEEN ? AND ? AND txn_type = 'P' "
                           f"AND unmatched_reason IN ({reasons})")
@@ -145,30 +147,51 @@ def _filters(df: pd.DataFrame, cfg: Config, group: str, sc: Scenario) -> tuple[p
 
 
 def _synthetic(inp: dict, cfg: Config, sc: Scenario, hold: int) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Synthetic signals + price paths for a sample of unmatched purchases (survivorship bound)."""
+    """Synthetic signals + price paths for unmatched purchases (survivorship bound).
+
+    Unmatched purchases are grouped into issuer episodes that mirror the engine's one-position-per-
+    ticker rule: an episode starts at a purchase and absorbs later purchases of the same issuer within
+    `hold` trading days. Each episode is kept with probability = that year's universe pass rate among
+    matched purchases (seeded), and becomes one synthetic security priced at 0% / SPY / -100%.
+    """
     um, _ = _filters(inp["unmatched"].copy(), cfg, inp["group"], replace(sc, bound=None))
-    rng = np.random.default_rng(int(cfg["survivorship_bounds"]["seed"]))
-    years = pd.to_datetime(um["entry_date"]).dt.year
-    um = um[rng.random(len(um)) < years.map(inp["pass_rate"]).fillna(0.0).to_numpy()]
     cal = pd.DatetimeIndex(inp["calendar"])
+    um = um.assign(i=cal.searchsorted(pd.to_datetime(um["entry_date"])))
+    um = um[(um["i"] < len(cal))]
+    um = um[cal[um["i"].clip(upper=len(cal) - 1)] == pd.to_datetime(um["entry_date"])]
+    um = um.sort_values(["issuer_key", "i"])
+    ep, last_key, start = [], None, -10**9
+    n_ep = 0
+    for key, i in zip(um["issuer_key"], um["i"], strict=True):
+        if key != last_key or i >= start + hold:
+            n_ep += 1
+            start, last_key = i, key
+        ep.append((n_ep, start))
+    um["episode"] = [e for e, _ in ep]
+    um["ep_start"] = [st for _, st in ep]
+
+    rng = np.random.default_rng(int(cfg["survivorship_bounds"]["seed"]))
+    episodes = um.drop_duplicates("episode")[["episode", "ep_start"]]
+    rate = pd.Series(cal[episodes["ep_start"]].year).map(inp["pass_rate"]).fillna(0.0).to_numpy()
+    keep_ep = set(episodes["episode"][rng.random(len(episodes)) < rate])
+    um = um[um["episode"].isin(keep_ep)]
+
     spy_idx = (1 + inp["spy"]).cumprod()
     rows = []
-    for s in um.itertuples(index=False):
-        i0 = cal.searchsorted(pd.Timestamp(s.entry_date))
-        if i0 >= len(cal) or cal[i0] != pd.Timestamp(s.entry_date):
-            continue
-        span = cal[i0:min(i0 + hold + 1, len(cal))]
+    for e, st in um.drop_duplicates("episode")[["episode", "ep_start"]].itertuples(index=False):
+        span = cal[st:min(st + hold + 1, len(cal))]
         px = spy_idx.reindex(span).to_numpy() if sc.bound == "benchmark" else np.ones(len(span))
         dr = np.full(len(span), np.nan)
         if sc.bound == "minus_100":
             dr[min(hold - 1, len(span) - 1)] = -1.0   # worthless by the close before the scheduled exit
         else:
             dr[-1] = 0.0                              # exit at the last price, never the -100% default
-        rows.append(pd.DataFrame({"security_id": f"synthetic:{s.signal_id}", "date": span, "open": px,
-                                  "close": px, "delist_return": dr}))
-    sig = pd.DataFrame({"signal_id": "synthetic:" + um["signal_id"].astype(str), "side": "buy",
-                        "security_id": "synthetic:" + um["signal_id"].astype(str), "filer_id": um["filer_id"],
-                        "public_date": um["public_date"], "entry_date": um["entry_date"], "weight": 1.0})
+        rows.append(pd.DataFrame({"security_id": f"synthetic:{e}", "date": span, "open": px, "close": px,
+                                  "delist_return": dr}))
+    sec = "synthetic:" + um["episode"].astype(str)
+    sig = pd.DataFrame({"signal_id": "synthetic:" + um["signal_id"].astype(str), "side": "buy", "security_id": sec,
+                        "filer_id": um["filer_id"], "public_date": um["public_date"], "entry_date": um["entry_date"],
+                        "weight": 1.0})
     px = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame(columns=["security_id", "date"])
     return sig, px
 
@@ -184,7 +207,7 @@ def prepare(inp: dict, cfg: Config, sc: Scenario) -> dict:
     n_syn = 0
     if sc.bound:
         syn_sig, syn_px = _synthetic(inp, cfg, sc, hold)
-        n_syn = len(syn_sig)
+        n_syn = int(syn_sig["security_id"].nunique()) if len(syn_sig) else 0
         signals = pd.concat([signals, syn_sig], ignore_index=True)
         prices = pd.concat([prices, syn_px], ignore_index=True)
     drops["synthetic_unmatched"] = n_syn

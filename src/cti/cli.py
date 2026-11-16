@@ -138,6 +138,19 @@ def signals() -> None:
         con.close()
 
 
+audit_app = typer.Typer(help="Hand audits of security matching", no_args_is_help=True)
+app.add_typer(audit_app, name="audit")
+
+
+@audit_app.command("score")
+def audit_score() -> None:
+    """Score the filled-in audit CSVs (accuracy + 95% Wilson CI) -> reports/audit/AUDIT_RESULTS.md."""
+    from cti.audit import score
+
+    for r in score().itertuples():
+        typer.echo(f"{r.group}: {r.correct}/{r.audited} correct ({r.audited} of {r.of} audited)")
+
+
 @ingest_app.command("congress")
 def ingest_congress(start: int = 2015, end: int = 2026) -> None:
     """House PTR index + electronic PDFs (House Clerk), then parse to staging."""

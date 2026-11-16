@@ -118,3 +118,22 @@ def test_congress_entry_strictly_after_filing(world):
     m = world[world["matched"]]
     assert (m["entry_date"] > m["public_date"]).all()
     assert (m["entry_date"] == DAYS[6]).all()  # filed on day 5 -> enters day 6
+
+
+def test_one_price_ticker_per_company_and_no_fund_families():
+    tx = pd.DataFrame([
+        ("b1", "Barclays PLC ADR (BCS)", "BCS"), ("b2", "Barclays PLC Ordinary (BCLYF)", "BCLYF"),
+        ("e1", "ProShares UltraShort Yen (YCS)", "YCS"),
+    ], columns=["txn_id", "asset", "ticker"]).assign(txn_type="P", asset_type="ST", last="Doe", first="J",
+                                                     state_dst="CA01", owner=None)
+    tx["trade_date"], tx["filing_date"] = DAYS[1], DAYS[5]
+    sec_map = pd.DataFrame({"cik": ["0000312069", "0000312069"] + ["0001415311"] * 5,
+                            "name": ["Barclays PLC"] * 2 + ["ProShares Trust II"] * 5,
+                            "ticker": ["BCS", "BCLYF", "YCS", "EUO", "UCO", "SCO", "UVXY"], "exchange": "NYSE"})
+    prices = pd.concat([pd.DataFrame({"ticker": t, "date": DAYS}) for t in ["BCS", "BCLYF", "YCS", "EUO"]])
+    r = resolve(tx, form4_ticker_history(pd.DataFrame(columns=["issuer_cik", "issuer_ticker", "issuer_name",
+                                                               "filed_date"])),
+                sec_map, pd.DataFrame(columns=["cik", "ticker"]), prices, pd.DataFrame({"date": DAYS}),
+                min_history_days=5).set_index("txn_id")
+    assert r.loc["b1", "ticker"] == r.loc["b2", "ticker"] == "BCS"   # both trades priced with ONE series
+    assert r.loc["e1", "unmatched_reason"] == "ticker_not_mapped"     # fund-family CIK not used

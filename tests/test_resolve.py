@@ -154,3 +154,19 @@ def test_reused_ticker_listed_after_the_trade_is_flagged():
     cands = pd.DataFrame([_cand("r1", "0000000008", "OLD", 1, 2, 10.0)])
     _, res = resolve(cands, sec_map, prices, build_calendar(DAYS), 0.25, 2.0, min_history_days=3)
     assert res.loc[0, "unmatched_reason"] == "entry_before_price_history"
+
+
+def test_audit_sample_never_overwrites_a_started_audit(tmp_path):
+    from cti.audit import score, wilson, write_sample
+    p = tmp_path / "match_audit_sample.csv"
+    write_sample(pd.DataFrame({"txn_id": ["a", "b", "c"]}), p)
+    df = pd.read_csv(p, dtype=str, keep_default_na=False)
+    df.loc[0, "audit_correct"], df.loc[1, "audit_correct"] = "y", "n"
+    df.to_csv(p, index=False)
+    out = write_sample(pd.DataFrame({"txn_id": ["x"]}), p)
+    assert out.name == "match_audit_sample_new.csv"
+    assert pd.read_csv(p, dtype=str)["audit_correct"].tolist()[:2] == ["y", "n"]   # untouched
+    s = score(tmp_path).set_index("group").loc["insider"]
+    assert (s["audited"], s["correct"]) == (2, 1)
+    lo, hi = wilson(97, 100)
+    assert round(lo, 2) == 0.92 and round(hi, 2) == 0.99

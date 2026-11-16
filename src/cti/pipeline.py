@@ -146,10 +146,12 @@ def write_quality_report(cands, secs, res, prices, calendar, cfg: Config, report
     sample = res[res["matched"]].sample(n=k, random_state=int(cfg["resolution"]["audit_seed"]))
     audit_dir = reports_dir / "audit"
     audit_dir.mkdir(exist_ok=True)
+    from cti.audit import sec_filing_url, write_sample
     audit = sample[["txn_id", "issuer_cik", "issuer_name", "issuer_ticker", "ticker", "match_method",
-                    "match_confidence", "trade_date", "reported_price", "close_nominal_at_trade",
-                    "price_ratio"]].assign(audit_correct="", audit_note="")
-    audit.to_csv(audit_dir / "match_audit_sample.csv", index=False)
+                    "match_confidence", "trade_date", "reported_price", "close_nominal_at_trade", "price_ratio"]].copy()
+    audit.insert(1, "filing_url", [sec_filing_url(t.split(":")[0], c)
+                                   for t, c in zip(audit["txn_id"], audit["issuer_cik"], strict=True)])
+    write_sample(audit, audit_dir / "match_audit_sample.csv")
     res[~res["matched"]].to_csv(audit_dir / "unmatched.csv", index=False)
 
     def table(s: pd.Series, total: int, label: str) -> str:
