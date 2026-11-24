@@ -1,7 +1,9 @@
+# all data stays local; only the empty folder placeholders are tracked
+data/*
+!data/raw/
+!data/staging/
 data/raw/*
 data/staging/*
-data/*.duckdb
-data/*.duckdb.wal
 !data/raw/.gitkeep
 !data/staging/.gitkeep
 .venv/
@@ -10,4 +12,5 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .env
+.env.*
 data/logs/
