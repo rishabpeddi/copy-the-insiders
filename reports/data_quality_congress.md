@@ -1,61 +1,71 @@
-# Congress data quality (generated): House PTRs
+# Congress data quality (generated): House and Senate PTRs
 
-Source: House Clerk periodic transaction reports (2015 onward). Senate not yet included.
+Sources: House Clerk periodic transaction reports (2015 onward) and Senate eFD periodic transaction
+reports (2012 onward). Both chambers form one Congress group.
+
+## By chamber
+| chamber | PTRs | paper scans | in-scope txns | matched | matched purchases |
+|---|---:|---:|---:|---:|---:|
+| house | 7,738 | 2,031 | 45,524 | 37,129 (81.6%) | 18,451 |
+| senate | 2,138 | 308 | 10,060 | 7,718 (76.7%) | 3,909 |
 
 ## Documents
 | PTR status | count | share |
 |---|---:|---:|
-| parsed | 5,707 | 73.8% |
-| paper_scan_not_parsed | 2,031 | 26.2% |
+| parsed | 7,533 | 76.3% |
+| paper_scan_not_parsed | 2,339 | 23.7% |
+| not_downloaded | 4 | 0.0% |
 
 Paper scans have no text layer; parsing them needs OCR (not done), so they are a coverage gap.
 
 ## Transactions
-- Parsed transactions: **55,830**
-- In scope (purchase or sale of a stock with a ticker): **45,524**
-- Matched to a priced security: **37,129 (81.6% of in scope)**
+- Parsed transactions: **69,847**
+- In scope (purchase or sale of a stock with a ticker): **55,584**
+- Matched to a priced security: **44,847 (80.7% of in scope)**
 
 | Unmatched / out-of-scope reason | count | share |
 |---|---:|---:|
-| not_stock_asset_type | 6,221 | 11.1% |
-| ticker_not_mapped | 4,319 | 7.7% |
-| no_ticker | 3,525 | 6.3% |
-| ticker_not_in_price_source | 3,510 | 6.3% |
-| not_purchase_or_sale | 560 | 1.0% |
-| entry_before_price_history | 469 | 0.8% |
-| name_mismatch | 97 | 0.2% |
+| not_stock_asset_type | 9,330 | 13.4% |
+| ticker_not_mapped | 5,290 | 7.6% |
+| ticker_not_in_price_source | 4,561 | 6.5% |
+| no_ticker | 4,244 | 6.1% |
+| entry_before_price_history | 725 | 1.0% |
+| not_purchase_or_sale | 689 | 1.0% |
+| name_mismatch | 160 | 0.2% |
+| entry_after_calendar_end | 1 | 0.0% |
 
 | Match confidence (matched) | count | share |
 |---|---:|---:|
-| high | 34,366 | 92.6% |
-| medium | 2,555 | 6.9% |
-| low | 208 | 0.6% |
+| high | 41,496 | 92.5% |
+| medium | 2,964 | 6.6% |
+| low | 387 | 0.9% |
 
 | Match method (matched) | count | share |
 |---|---:|---:|
-| form4_ticker_history | 34,574 | 93.1% |
-| sec_current_ticker | 2,555 | 6.9% |
+| form4_ticker_history | 41,883 | 93.4% |
+| sec_current_ticker | 2,964 | 6.6% |
 
 ## By filing year
 | year | PTRs | parsed (electronic) | paper scans | in-scope txns | matched |
 |---|---:|---:|---:|---:|---:|
-| 2015 | 690 | 390 | 300 | 3,013 | 64.7% |
-| 2016 | 777 | 450 | 327 | 2,834 | 69.6% |
-| 2017 | 803 | 506 | 297 | 2,878 | 73.4% |
-| 2018 | 832 | 533 | 299 | 3,261 | 70.9% |
-| 2019 | 691 | 520 | 171 | 4,317 | 76.7% |
-| 2020 | 735 | 597 | 138 | 6,139 | 78.7% |
-| 2021 | 683 | 565 | 118 | 4,767 | 84.1% |
-| 2022 | 621 | 505 | 116 | 2,865 | 84.4% |
-| 2023 | 469 | 388 | 81 | 3,489 | 81.4% |
-| 2024 | 445 | 394 | 51 | 2,142 | 93.2% |
-| 2025 | 518 | 449 | 69 | 6,743 | 95.2% |
-| 2026 | 474 | 410 | 64 | 3,076 | 96.0% |
+| 2014 | 91 | 90 | 0 | 514 | 73.0% |
+| 2015 | 851 | 550 | 300 | 3,915 | 63.7% |
+| 2016 | 979 | 614 | 363 | 3,606 | 70.1% |
+| 2017 | 1,022 | 688 | 334 | 3,909 | 74.3% |
+| 2018 | 1,067 | 718 | 349 | 4,239 | 71.3% |
+| 2019 | 921 | 698 | 223 | 5,215 | 77.2% |
+| 2020 | 914 | 743 | 171 | 7,420 | 80.6% |
+| 2021 | 828 | 688 | 140 | 5,081 | 84.3% |
+| 2022 | 740 | 605 | 135 | 3,366 | 84.5% |
+| 2023 | 584 | 488 | 96 | 4,090 | 82.6% |
+| 2024 | 574 | 509 | 65 | 2,717 | 90.8% |
+| 2025 | 685 | 595 | 90 | 7,290 | 94.0% |
+| 2026 | 620 | 547 | 73 | 4,222 | 87.6% |
 
 ## Electronic vs paper filers
-421 members filed PTRs: 289 electronic only, 76 paper only,
-56 both. 26.2% of all PTRs are paper. The 10 most frequent filers account for
-21.3% of PTRs, so a few members drive much of the sample. Members with the highest paper share:
+504 members filed PTRs: 365 electronic only, 78 paper only,
+61 both. 23.7% of all PTRs are paper. The 10 most frequent filers account for
+17.6% of PTRs, so a few members drive much of the sample. Members with the highest paper share:
 
 | member | PTRs | paper |
 |---|---:|---:|
@@ -69,11 +79,11 @@ Paper scans have no text layer; parsing them needs OCR (not done), so they are a
 | ROE, DAVID P. (TN01) | 72 | 100% |
 | BLACK, DIANE (TN06) | 65 | 100% |
 | LAMBORN, DOUG (CO05) | 64 | 100% |
+| BURR, RICHARD M (Senate) | 63 | 100% |
 | MARCHANT, KENNY (TX24) | 60 | 100% |
 | FRELINGHUYSEN, RODNEY P. (NJ11) | 58 | 100% |
 | UPTON, FRED (MI06) | 58 | 100% |
 | POLIS, JARED (CO02) | 56 | 100% |
-| KELLY, MIKE (PA03) | 51 | 100% |
 
 Paper filers' trades are missing from every result. If they trade differently, the House result
 describes electronic filers, not all members.

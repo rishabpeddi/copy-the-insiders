@@ -160,6 +160,16 @@ def ingest_congress(start: int = 2015, end: int = 2026) -> None:
     congress_house.stage(log=lambda m: typer.echo(m))
 
 
+@ingest_app.command("senate")
+def ingest_senate(since: str = "01/01/2012", download: bool = True) -> None:
+    """Senate eFD PTR index + electronic reports, then parse to staging."""
+    from cti.ingest import congress_senate
+
+    if download:
+        congress_senate.ingest(since, log=lambda m: typer.echo(m))
+    congress_senate.stage(log=lambda m: typer.echo(m))
+
+
 @app.command("resolve-congress")
 def resolve_congress(fetch_prices: bool = typer.Option(True, help="Fetch prices for newly mapped tickers")) -> None:
     """Match House transactions to securities; writes congress_resolution and data_quality_congress.md."""

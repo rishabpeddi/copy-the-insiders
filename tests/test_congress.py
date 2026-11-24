@@ -137,3 +137,71 @@ def test_one_price_ticker_per_company_and_no_fund_families():
                 min_history_days=5).set_index("txn_id")
     assert r.loc["b1", "ticker"] == r.loc["b2", "ticker"] == "BCS"   # both trades priced with ONE series
     assert r.loc["e1", "unmatched_reason"] == "ticker_not_mapped"     # fund-family CIK not used
+
+
+SENATE_PTR = """<html><body><table class="table">
+<thead><tr><th>#</th><th>Transaction Date</th><th>Owner</th><th>Ticker</th><th>Asset Name</th>
+<th>Asset Type</th><th>Type</th><th>Amount</th><th>Comment</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>10/30/2026</td><td>Joint</td><td>--</td><td>Illinois St GO Bond Rate/Coupon: 5.0%</td>
+    <td>Municipal Security</td><td>Purchase</td><td>$1,001 - $15,000</td><td>--</td></tr>
+<tr><td>2</td><td>10/06/2026</td><td>Spouse</td><td><a href="https://finance.yahoo.com/q?s=DHR">DHR</a></td>
+    <td>Danaher Corporation</td><td>Stock</td><td>Sale (Partial)</td><td>$50,001 - $100,000</td><td>--</td></tr>
+<tr><td>3</td><td>10/07/2026</td><td>Self</td><td>--</td><td>WBD</td><td>Stock</td><td>Purchase</td>
+    <td>Over $50,000,000</td><td>--</td></tr>
+</tbody></table></body></html>"""
+
+
+def test_senate_ptr_table():
+    from cti.ingest.congress_senate import parse_ptr_html
+
+    rows = parse_ptr_html(SENATE_PTR)
+    assert [(r["ticker"], r["asset_type"], r["txn_type"]) for r in rows] == [
+        (None, "GS", "P"), ("DHR", "ST", "S"), ("WBD", "ST", "P")]   # WBD: ticker given in the asset-name column
+    assert rows[1]["partial"] is True and rows[1]["owner"] == "Spouse"
+    assert (rows[1]["amount_low"], rows[1]["amount_high"]) == (50_001, 100_000)
+    assert (rows[2]["amount_low"], rows[2]["amount_high"]) == (50_000_001, None)
+    assert rows[0]["trade_date"] == pd.Timestamp("2026-10-30")
+
+
+def test_senate_index_rows_and_paper():
+    from cti.ingest.congress_senate import parse_index_rows
+
+    idx = parse_index_rows([
+        ["Rafael E", "Cruz", "Cruz, Ted (Senator)",
+         '<a href="/search/view/ptr/f0f7eba0-ca09-4b80-a97b-64b6dafb835e/" target="_blank">'
+         'Periodic Transaction Report for 11/18/2026</a>', "11/18/2026"],
+        ["Jane", "Doe", "Doe, Jane (Senator)",
+         '<a href="/search/view/paper/0a1b2c3d-0000-0000-0000-000000000000/" target="_blank">'
+         'Periodic Transaction Report Amendment</a>', "01/05/2015"]])
+    assert list(idx["electronic"]) == [True, False] and list(idx["amendment"]) == [False, True]
+    assert idx.loc[0, "doc_id"] == "f0f7eba0-ca09-4b80-a97b-64b6dafb835e"
+    assert idx.loc[1, "filing_date"] == pd.Timestamp("2015-01-05")
+
+
+def test_senate_filer_ids_are_kept_apart_from_house():
+    tx = pd.DataFrame([("h1", "house", "CA01"), ("s1", "senate", "")], columns=["txn_id", "chamber", "state_dst"])
+    tx = tx.assign(asset="Danaher Corporation (DHR)", ticker="DHR", txn_type="P", asset_type="ST", last="Doe",
+                   first="Jane", owner=None, trade_date=DAYS[1], filing_date=DAYS[5])
+    hist = form4_ticker_history(pd.DataFrame({"issuer_cik": ["0000000001"], "issuer_ticker": ["DHR"],
+                                              "issuer_name": ["DANAHER CORP"], "filed_date": [DAYS[0]]}))
+    r = resolve(tx, hist, pd.DataFrame({"cik": ["0000000001"], "name": ["Danaher"], "ticker": ["DHR"],
+                                        "exchange": "NYSE"}),
+                pd.DataFrame({"cik": ["0000000001"], "ticker": ["DHR"]}),
+                pd.DataFrame({"ticker": "DHR", "date": DAYS}), pd.DataFrame({"date": DAYS}),
+                min_history_days=5).set_index("txn_id")
+    assert r.loc["h1", "filer_id"] == "house:DOE:JANE:CA01" and r.loc["s1", "filer_id"] == "senate:DOE:JANE:"
+    assert r["matched"].all()
+
+
+def test_senate_amendment_dedup_keeps_same_report_repeats():
+    from cti.ingest.congress_senate import dedupe_amendments
+
+    base = dict(last="Doe", first="Jane", owner="Self", trade_date=DAYS[1], txn_type="P", amount_low=1001,
+                ticker="DHR", asset="Danaher")
+    tx = pd.DataFrame([{**base, "doc_id": "orig", "filing_date": DAYS[5]},
+                       {**base, "doc_id": "orig", "filing_date": DAYS[5]},          # second lot, same report: real
+                       {**base, "doc_id": "amend", "filing_date": DAYS[9]},         # repeated in the amendment
+                       {**base, "doc_id": "amend", "filing_date": DAYS[9], "owner": "Spouse"}])  # new in amendment
+    out = dedupe_amendments(tx)
+    assert list(out["doc_id"]) == ["orig", "orig", "amend"] and out.attrs["dropped"] == 1

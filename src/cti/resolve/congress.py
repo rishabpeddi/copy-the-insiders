@@ -139,7 +139,8 @@ def resolve(tx: pd.DataFrame, hist: pd.DataFrame, sec_map: pd.DataFrame, insider
         [~r["matched"], (r["match_method"] == "form4_ticker_history") & r["name_match"], r["name_match"]],
         [None, "high", "medium"], default="low")
     r["ticker"] = r["price_ticker"]
-    r["filer_id"] = ("house:" + r["last"].str.upper().str.replace(r"[^A-Z]", "", regex=True) + ":"
+    chamber = r["chamber"].fillna("house") if "chamber" in r else "house"
+    r["filer_id"] = (chamber + ":" + r["last"].str.upper().str.replace(r"[^A-Z]", "", regex=True) + ":"
                      + r["first"].str.upper().str.replace(r"[^A-Z]", "", regex=True).str[:12] + ":"
                      + r["state_dst"].fillna("").str.upper())
     return r

@@ -6,7 +6,7 @@ change made after dev-period returns were first computed (2026-11-15) is listed 
 
 ## Question
 Does a portfolio that copies (a) open-market purchases by corporate officers and directors and
-(b) stock purchases disclosed by members of the House, entered only after the filing is public,
+(b) stock purchases disclosed by members of Congress (House and Senate), entered only after the filing is public,
 earn a positive risk-adjusted return after costs?
 
 - **Primary metric:** annualized alpha from regressing daily strategy excess returns on the
@@ -38,8 +38,8 @@ from 2022 to 2026. The forward period is the only fully clean test.
   under a 10b5-1 plan (SEC checkbox where it exists, footnote text before April 2023); common
   stock only (title excludes preferred, depositary, warrants, notes, funds, rights, units incl.
   MLP units, options); filed at most 30 days after the trade.
-- **Congress filters**: House PTR purchase of a stock (asset code ST, or no code with a ticker on
-  pre-2019 forms); filed at most 90 days after the trade; match confidence medium or high.
+- **Congress filters**: House or Senate PTR purchase of a stock (House asset code ST, or no code with a
+  ticker on pre-2019 forms; Senate asset type "Stock"), both chambers in one group; filed at most 90 days after the trade; match confidence medium or high.
 - **Universe (both)**: last close before entry ≥ $5; market cap ≥ $300M from SEC share counts
   already public at entry; listed on NYSE (incl. American/Arca), Nasdaq, CBOE or TXSE.
 - **Portfolio**: equal weight. A new position gets 1/N of NAV, funded from cash first, then pro
@@ -78,7 +78,11 @@ from 2022 to 2026. The forward period is the only fully clean test.
 - **House coverage.** About a quarter of House PTRs are paper scans with no text layer (46% in
   2015, about 13% in 2024). They aren't parsed (OCR is future work). Coverage by year is reported in
   `reports/data_quality_congress.md`, so a cleaner recent sample can't stand in silently for the
-  full population. Senate PTRs aren't included yet.
+  full population.
+- **Senate coverage.** Senate eFD PTRs (2012 onward) are HTML tables with a ticker column, so they
+  parse cleanly; paper scans are a small share and aren't parsed. eFD doesn't link an amendment to
+  the report it amends, so amended transactions are deduplicated against the same senator's
+  earlier ones (same trade date, ticker or asset, type and amount; earliest filing wins).
 - **Ticker reuse.** 5,419 insider purchases (3.5%) map to a ticker whose current history starts after
   the trade (e.g. SHLD: Sears then, a defense ETF now). They are excluded, never mispriced. For
   Congress, tickers are mapped through the issuer's own Form 4 ticker history at the trade date.
@@ -92,7 +96,7 @@ From `reports/dev_results/SUMMARY*.md`, yfinance prices (survivors only), 4.49-y
 | Group | Residual vol (FF5+Mom) | Tracking error vs SPY | MDA, factor alpha | MDA, vs SPY | Test CI half-width |
 |---|---:|---:|---:|---:|---:|
 | insider | 3.70% (R² 0.97) | 11.47% | **4.9% / yr** | 15.2% / yr | ±3.4% |
-| House | 3.53% (R² 0.96) | 5.67% | **4.7% / yr** | 7.5% / yr | ±3.3% |
+| Congress (House + Senate) | 3.48% (R² 0.96) | 5.46% | **4.6% / yr** | 7.2% / yr | ±3.2% |
 
 Factor adjustment cuts the minimum detectable effect by about two-thirds for insiders. Their
 tracking error vs SPY was mostly size and value exposure (loadings: SMB +0.66, HML +0.29).
@@ -108,7 +112,8 @@ after factor adjustment.
 - Insider primary: factor alpha +2.2% a year [95% CI +0.5%, +5.6%]. It doesn't hold up under
   25 bps costs (+1.2% [−0.3%, +5.0%]) or the survivorship bounds (0%: +0.8% [−0.7%, +3.6%];
   SPY: +1.2% [−0.1%, +3.8%]).
-- House primary: factor alpha −0.6% [−3.3%, +1.7%]. No variant is distinguishable from zero.
+- Congress primary (House + Senate): factor alpha −0.4% [−2.4%, +2.3%]. No variant is distinguishable
+  from zero. (House alone, before the Senate was added: −0.6% [−3.3%, +1.7%].)
 - The −100% bound (every missing company worthless within the hold) wipes out both groups. That's
   a deliberately extreme worst case, not a plausible outcome.
 
@@ -116,7 +121,7 @@ after factor adjustment.
 1. **Hand audits** (you): `reports/audit/match_audit_sample.csv` and
    `reports/audit/congress_match_audit_sample.csv`. Report accuracy with a CI (e.g. 97/100, 95% CI 91–99%).
 2. **CRSP/WRDS access**, or proceed with the survivorship bounds as the stated limit.
-3. **Senate eFD**: its public-use agreement must be accepted personally before Senate data can be added.
+3. **Senate eFD**: included (decided 2026-11-23, see the changelog).
 4. **Joint filings**: several reporting owners on one Form 4 count as separate signals for the same
    security (one position). Confirm.
 
@@ -137,3 +142,4 @@ minimum price history, the universe filter and its share-count lags, the exchang
 | 2026-11-15 | Survivorship-bound runs (−100% / 0% / SPY) | Coverage differs between periods. Shows the bias rather than hiding it. |
 | 2026-11-15 | Confirmed: MLP units excluded for both groups; exchanges NYSE (the SEC map includes American/Arca under "NYSE"), Nasdaq, CBOE, TXSE | Different tax and legal structure from common stock; the same rule for both groups |
 | 2026-11-15 | Sector clone connected as the secondary benchmark (SIC → sector ETF) | It was specified in the original plan but not yet built |
+| 2026-11-23 | Senate PTRs added to the Congress group (`groups.congress.chambers: [house, senate]`), one group with the House; Holm still over two groups | Coverage. The Senate data became available; the original question is about Congress, not one chamber. Merging keeps the number of tests (and so the power) unchanged. Decided before any Senate returns were computed. |

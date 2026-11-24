@@ -21,10 +21,29 @@ def _con(data_dir: Path, read_only: bool = False):
     return duckdb.connect(str(data_dir / "warehouse.duckdb"), read_only=read_only)
 
 
+CHAMBERS = ("house", "senate")
+
+
+def _staged(data_dir: Path, kind: str) -> pd.DataFrame:
+    """House and Senate staging tables stacked, with a `chamber` column. Senate is optional."""
+    parts = []
+    for ch in CHAMBERS:
+        p = data_dir / "staging" / "congress" / f"{ch}_{kind}.parquet"
+        if p.exists():
+            parts.append(pd.read_parquet(p).assign(chamber=ch))
+    return pd.concat(parts, ignore_index=True)
+
+
+def load_transactions(data_dir: Path = DATA_DIR) -> pd.DataFrame:
+    tx = _staged(data_dir, "transactions")
+    tx["txn_id"] = tx["chamber"] + ":" + tx["doc_id"] + ":" + tx.groupby(["chamber", "doc_id"]).cumcount().astype(str)
+    return tx
+
+
 def load_inputs(cfg: Config, data_dir: Path = DATA_DIR) -> dict:
     stg = data_dir / "staging"
-    tx = pd.read_parquet(stg / "congress" / "house_transactions.parquet")
-    tx["txn_id"] = "house:" + tx["doc_id"] + ":" + tx.groupby("doc_id").cumcount().astype(str)
+    tx = load_transactions(data_dir)
+    tx = tx[tx["chamber"].isin(cfg["groups"]["congress"].get("chambers", ["house"]))]
     prices = pd.read_parquet(stg / "prices" / f"{cfg['data']['price_source']}.parquet", columns=["ticker", "date"])
     prices["date"] = pd.to_datetime(prices["date"])
     con = _con(data_dir, read_only=True)
@@ -60,7 +79,7 @@ def ingest_prices(cfg: Config, data_dir: Path = DATA_DIR, log=print) -> int:
 
 def run_resolution(cfg: Config, data_dir: Path = DATA_DIR, reports_dir: Path = REPORTS_DIR) -> dict:
     r = _resolve(cfg, load_inputs(cfg, data_dir))
-    keep = ["txn_id", "doc_id", "filer_id", "last", "first", "state_dst", "owner", "asset", "ticker",
+    keep = ["txn_id", "chamber", "doc_id", "filer_id", "last", "first", "state_dst", "owner", "asset", "ticker",
             "norm_ticker", "asset_type", "txn_type", "partial", "trade_date", "public_date", "entry_date",
             "amount_low", "amount_high", "cik", "issuer_name", "security_id", "match_method", "name_match",
             "match_confidence", "matched", "unmatched_reason"]
@@ -93,13 +112,24 @@ def run_resolution(cfg: Config, data_dir: Path = DATA_DIR, reports_dir: Path = R
         con.unregister("_ex")
     finally:
         con.close()
-    docs = pd.read_parquet(data_dir / "staging" / "congress" / "house_documents.parquet")
-    return write_quality(res, docs, cfg, reports_dir)
+    return write_quality(res, _staged(data_dir, "documents"), cfg, reports_dir)
 
 
 def _table(s: pd.Series, total: int, label: str) -> str:
     return "\n".join([f"| {label} | count | share |", "|---|---:|---:|"]
                      + [f"| {a} | {b:,} | {b / max(total, 1):.1%} |" for a, b in s.items()])
+
+
+def _chamber_table(res: pd.DataFrame, docs: pd.DataFrame) -> str:
+    inscope = res[~res["unmatched_reason"].isin(OUT_OF_SCOPE)]
+    rows = ["| chamber | PTRs | paper scans | in-scope txns | matched | matched purchases |",
+            "|---|---:|---:|---:|---:|---:|"]
+    for ch in sorted(docs["chamber"].unique()):
+        d, i = docs[docs["chamber"] == ch], inscope[inscope["chamber"] == ch]
+        m = i[i["matched"]]
+        rows.append(f"| {ch} | {len(d):,} | {int((d['status'] == 'paper_scan_not_parsed').sum()):,} | {len(i):,} "
+                    f"| {len(m):,} ({len(m) / max(len(i), 1):.1%}) | {int((m['txn_type'] == 'P').sum()):,} |")
+    return "\n".join(rows)
 
 
 def write_quality(res: pd.DataFrame, docs: pd.DataFrame, cfg: Config, reports_dir: Path) -> dict:
@@ -123,7 +153,8 @@ def write_quality(res: pd.DataFrame, docs: pd.DataFrame, cfg: Config, reports_di
                      f"| {size:,} | {rate} |")
 
     # Who files on paper? If paper filers differ systematically, the parsed sample isn't the population.
-    member = docs["last"].str.upper() + ", " + docs["first"].str.upper() + " (" + docs["state_dst"] + ")"
+    who = docs["state_dst"].where(docs["chamber"] == "house", "Senate").fillna("")
+    member = docs["last"].str.upper() + ", " + docs["first"].str.upper() + " (" + who + ")"
     mem = docs.assign(member=member, paper=docs["status"].eq("paper_scan_not_parsed"))
     per = mem.groupby("member")["paper"].agg(["size", "mean"])
     kinds = {"electronic only": int((per["mean"] == 0).sum()), "paper only": int((per["mean"] == 1).sum()),
@@ -137,17 +168,21 @@ def write_quality(res: pd.DataFrame, docs: pd.DataFrame, cfg: Config, reports_di
     audit = res[res["matched"]].sample(n=k, random_state=int(cfg["resolution"]["audit_seed"]))
     audit_dir = reports_dir / "audit"
     audit_dir.mkdir(parents=True, exist_ok=True)
-    from cti.audit import house_ptr_url, write_sample
-    a = audit[["txn_id", "doc_id", "last", "first", "asset", "norm_ticker", "ticker", "issuer_name", "match_method",
-               "match_confidence", "trade_date", "public_date"]].copy()
-    a.insert(1, "ptr_url", [house_ptr_url(d, pd.Timestamp(p).year)
-                            for d, p in zip(a["doc_id"], a["public_date"], strict=True)])
+    from cti.audit import ptr_url, write_sample
+    a = audit[["txn_id", "chamber", "doc_id", "last", "first", "asset", "norm_ticker", "ticker", "issuer_name",
+               "match_method", "match_confidence", "trade_date", "public_date"]].copy()
+    a.insert(1, "ptr_url", [ptr_url(c, d, pd.Timestamp(p).year)
+                            for c, d, p in zip(a["chamber"], a["doc_id"], a["public_date"], strict=True)])
     write_sample(a, audit_dir / "congress_match_audit_sample.csv")
 
     nl = "\n"
-    md = f"""# Congress data quality (generated): House PTRs
+    md = f"""# Congress data quality (generated): House and Senate PTRs
 
-Source: House Clerk periodic transaction reports (2015 onward). Senate not yet included.
+Sources: House Clerk periodic transaction reports (2015 onward) and Senate eFD periodic transaction
+reports (2012 onward). Both chambers form one Congress group.
+
+## By chamber
+{_chamber_table(res, docs)}
 
 ## Documents
 {_table(docs['status'].value_counts(), len(docs), "PTR status")}

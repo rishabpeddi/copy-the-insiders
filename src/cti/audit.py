@@ -23,6 +23,14 @@ def sec_filing_url(accession: str, cik: str) -> str:
     return f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{accession.replace('-', '')}/"
 
 
+def senate_ptr_url(doc_id: str) -> str:
+    return f"https://efdsearch.senate.gov/search/view/ptr/{doc_id}/"  # opens after accepting the eFD agreement
+
+
+def ptr_url(chamber: str, doc_id: str, year: int) -> str:
+    return senate_ptr_url(doc_id) if chamber == "senate" else house_ptr_url(doc_id, year)
+
+
 def house_ptr_url(doc_id: str, year: int) -> str:
     return f"https://disclosures-clerk.house.gov/public_disc/ptr-pdfs/{year}/{doc_id}.pdf"
 

@@ -34,7 +34,8 @@ groups:
     security_title_exclude_regex: 'preferred|depositary|warrant|\bnotes?\b|debenture|\bfund\b|\brights?\b|\bunits?\b|option'
     entry: next_open_after_filed_date
   congress:
-    asset_types: [common_stock]    # House asset code ST, or no code (pre-2019 PTRs) with a ticker
+    chambers: [house, senate]      # one group: House Clerk PTRs and Senate eFD PTRs
+    asset_types: [common_stock]    # House code ST or no code (pre-2019) with a ticker; Senate type "Stock"
     entry: next_open_after_filed_date
     max_filing_lag_days: 90        # twice the STOCK Act's 45-day limit; late filing is common and real
     min_match_confidence: medium   # a wrong-company match is worse than a missing one; low is a sensitivity run
